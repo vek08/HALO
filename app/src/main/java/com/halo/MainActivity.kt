@@ -2,6 +2,7 @@ package com.halo
 
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -20,6 +21,7 @@ import com.halo.ui.TransferViewModel
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.d("HALO_LIFECYCLE", "onCreate")
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -28,11 +30,18 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d("HALO_LIFECYCLE", "onDestroy")
+    }
 }
 
 @Composable
 fun TransferApp(viewModel: TransferViewModel = viewModel()) {
     val context = LocalContext.current
+    val appContext = context.applicationContext // Use application context to prevent leak/crash if Activity is recreated
+    
     val state by viewModel.transferState.collectAsState()
     val localIp by viewModel.localIp.collectAsState()
 
@@ -43,15 +52,29 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
-        onResult = { uri -> selectedUri = uri }
+        onResult = { uri -> 
+            Log.d("HALO_SAF", "OpenDocument result: $uri")
+            selectedUri = uri 
+        }
     )
 
     // Launcher for saving the received file
     val saveFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("*/*")
     ) { uri ->
-        if (uri != null && state is TransferState.ReceivedPendingSave) {
-            viewModel.saveFileToDestination(context, uri, state as TransferState.ReceivedPendingSave)
+        Log.d("HALO_SAF", "CreateDocument result: $uri")
+        // Read directly from ViewModel to avoid stale Compose closures
+        val currentState = viewModel.transferState.value
+        
+        if (uri != null) {
+            if (currentState is TransferState.ReceivedPendingSave) {
+                Log.d("HALO_SAF", "Initiating save to destination...")
+                viewModel.saveFileToDestination(appContext, uri, currentState)
+            } else {
+                Log.e("HALO_SAF", "Error: Expected ReceivedPendingSave state, but got ${currentState.javaClass.simpleName}")
+            }
+        } else {
+            Log.d("HALO_SAF", "User cancelled SAF picker. Retaining current state.")
         }
     }
 
@@ -99,7 +122,7 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                         Spacer(modifier = Modifier.height(16.dp))
                         Row {
                             Button(onClick = { 
-                                // Launch SAF picker with original filename
+                                Log.d("HALO_UI", "Launching SAF picker with name: ${s.originalName}")
                                 saveFileLauncher.launch(s.originalName)
                             }) {
                                 Text("Save to device")
@@ -139,7 +162,7 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                     )
                     Button(
                         onClick = {
-                            selectedUri?.let { viewModel.sendFile(context, it, receiverIp, port) }
+                            selectedUri?.let { viewModel.sendFile(appContext, it, receiverIp, port) }
                         },
                         enabled = selectedUri != null && receiverIp.isNotBlank(),
                         modifier = Modifier.padding(top = 8.dp)
@@ -157,7 +180,7 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                     Text("Receive File", style = MaterialTheme.typography.titleMedium)
                     Text("My IP: $localIp", style = MaterialTheme.typography.bodyMedium)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = { viewModel.startListening(context, port) }) {
+                    Button(onClick = { viewModel.startListening(appContext, port) }) {
                         Text("Start Listening")
                     }
                 }

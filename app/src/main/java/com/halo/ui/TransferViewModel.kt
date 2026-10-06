@@ -2,6 +2,7 @@ package com.halo.ui
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.halo.core.FileMetadata
@@ -29,6 +30,10 @@ class TransferViewModel : ViewModel() {
     private var currentReceiver: TcpReceiver? = null
     private var transferJob: Job? = null
 
+    init {
+        Log.d("HALO_VM", "TransferViewModel initialized")
+    }
+
     fun refreshLocalIp() {
         _localIp.value = NetworkUtils.getLocalIpAddress()
     }
@@ -36,6 +41,7 @@ class TransferViewModel : ViewModel() {
     fun startListening(context: Context, port: Int) {
         if (_transferState.value is TransferState.Connecting || _transferState.value is TransferState.Transferring) return
         
+        Log.d("HALO_VM", "startListening called on port $port")
         _transferState.value = TransferState.Connecting
         transferJob = viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -49,6 +55,7 @@ class TransferViewModel : ViewModel() {
                     }
 
                     override fun onComplete(savedFile: File, metadata: FileMetadata) {
+                        Log.d("HALO_VM", "Transfer complete. Pending save for: ${metadata.fileName}")
                         _transferState.value = TransferState.ReceivedPendingSave(
                             tempFile = savedFile,
                             originalName = metadata.fileName,
@@ -59,6 +66,7 @@ class TransferViewModel : ViewModel() {
                     }
 
                     override fun onError(e: Exception) {
+                        Log.e("HALO_VM", "Receiver Error", e)
                         if (e.message != "Socket closed") {
                             _transferState.value = TransferState.Error(e.message ?: "Unknown error")
                         }
@@ -66,6 +74,7 @@ class TransferViewModel : ViewModel() {
                 })
                 currentReceiver?.startListening()
             } catch (e: Exception) {
+                Log.e("HALO_VM", "startListening Exception", e)
                 _transferState.value = TransferState.Error(e.message ?: "Unknown error")
             }
         }
@@ -74,6 +83,7 @@ class TransferViewModel : ViewModel() {
     fun sendFile(context: Context, uri: Uri, ip: String, port: Int) {
         if (_transferState.value is TransferState.Connecting || _transferState.value is TransferState.Transferring) return
         
+        Log.d("HALO_VM", "sendFile called to $ip:$port")
         _transferState.value = TransferState.Connecting
         transferJob = viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -92,40 +102,54 @@ class TransferViewModel : ViewModel() {
                     sender.sendStream(stream, fileSize, fileName, mimeType)
                 }
                 
+                Log.d("HALO_VM", "Send complete")
                 _transferState.value = TransferState.Success("Transfer Complete")
             } catch (e: Exception) {
+                Log.e("HALO_VM", "Send Error", e)
                 _transferState.value = TransferState.Error(e.message ?: "Unknown error")
             }
         }
     }
 
     fun saveFileToDestination(context: Context, destinationUri: Uri, pendingState: TransferState.ReceivedPendingSave) {
+        Log.d("HALO_VM", "saveFileToDestination called for URI: $destinationUri")
         _transferState.value = TransferState.Saving
+        
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                Log.d("HALO_VM", "Opening output stream...")
                 val outputStream = context.contentResolver.openOutputStream(destinationUri)
                     ?: throw Exception("Could not open output stream for saving.")
                 
+                Log.d("HALO_VM", "Copying bytes from ${pendingState.tempFile.absolutePath} to destination...")
                 FileInputStream(pendingState.tempFile).use { inputStream ->
                     outputStream.use { outStream ->
                         val buffer = ByteArray(8192)
                         var bytesRead: Int
+                        var totalRead = 0L
                         while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                             outStream.write(buffer, 0, bytesRead)
+                            totalRead += bytesRead
                         }
+                        Log.d("HALO_VM", "Copied $totalRead bytes successfully.")
                     }
                 }
                 
-                // Cleanup temp file after successful copy
-                pendingState.tempFile.delete()
+                Log.d("HALO_VM", "Deleting temp file...")
+                val deleted = pendingState.tempFile.delete()
+                Log.d("HALO_VM", "Temp file deleted: $deleted")
+                
                 _transferState.value = TransferState.Success("File saved successfully!")
+                Log.d("HALO_VM", "State updated to Success.")
             } catch (e: Exception) {
+                Log.e("HALO_VM", "Save Failed", e)
                 _transferState.value = TransferState.Error("Failed to save: ${e.message}")
             }
         }
     }
 
     fun discardReceivedFile(pendingState: TransferState.ReceivedPendingSave) {
+        Log.d("HALO_VM", "Discarding received file...")
         pendingState.tempFile.delete()
         resetState()
     }
@@ -139,6 +163,7 @@ class TransferViewModel : ViewModel() {
     }
 
     fun cancelTransfer() {
+        Log.d("HALO_VM", "Cancelling transfer...")
         currentReceiver?.stopListening()
         currentReceiver = null
         transferJob?.cancel()
