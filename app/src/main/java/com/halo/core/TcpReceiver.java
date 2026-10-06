@@ -11,7 +11,7 @@ public class TcpReceiver {
 
     public interface ReceiverListener {
         void onProgress(long bytesReceived, long totalBytes);
-        void onComplete(File savedFile);
+        void onComplete(File savedFile, FileMetadata metadata);
         void onError(Exception e);
     }
 
@@ -95,7 +95,7 @@ public class TcpReceiver {
             }
 
             if (totalBytesRead == metadata.fileSize) {
-                if (listener != null) listener.onComplete(outputFile);
+                if (listener != null) listener.onComplete(outputFile, metadata);
             } else {
                 outputFile.delete();
                 throw new IOException("Transfer incomplete! Expected " + metadata.fileSize + " bytes, got " + totalBytesRead);

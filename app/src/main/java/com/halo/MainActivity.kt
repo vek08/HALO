@@ -46,6 +46,15 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
         onResult = { uri -> selectedUri = uri }
     )
 
+    // Launcher for saving the received file
+    val saveFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("*/*")
+    ) { uri ->
+        if (uri != null && state is TransferState.ReceivedPendingSave) {
+            viewModel.saveFileToDestination(context, uri, state as TransferState.ReceivedPendingSave)
+        }
+    }
+
     LaunchedEffect(Unit) {
         viewModel.refreshLocalIp()
     }
@@ -58,24 +67,56 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
         Spacer(modifier = Modifier.height(32.dp))
 
         // State indicator
-        when (state) {
+        when (val s = state) {
             is TransferState.Idle -> Text("Idle", color = MaterialTheme.colorScheme.onSurfaceVariant)
             is TransferState.Connecting -> Text("Connecting...", color = MaterialTheme.colorScheme.primary)
             is TransferState.Transferring -> {
-                val t = state as TransferState.Transferring
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Transferring: ${(t.progress * 100).toInt()}%", color = MaterialTheme.colorScheme.primary)
-                    LinearProgressIndicator(progress = t.progress, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-                    Text("${t.bytesSent} / ${t.totalBytes} bytes", style = MaterialTheme.typography.bodySmall)
+                    Text("Transferring: ${(s.progress * 100).toInt()}%", color = MaterialTheme.colorScheme.primary)
+                    LinearProgressIndicator(progress = s.progress, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                    Text("${s.bytesSent} / ${s.totalBytes} bytes", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            is TransferState.Saving -> {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Saving to device...", color = MaterialTheme.colorScheme.primary)
+                    CircularProgressIndicator(modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+            is TransferState.ReceivedPendingSave -> {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("File Received!", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Name: ${s.originalName}", style = MaterialTheme.typography.bodyMedium)
+                        Text("Size: ${s.fileSize} bytes", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row {
+                            Button(onClick = { 
+                                // Launch SAF picker with original filename
+                                saveFileLauncher.launch(s.originalName)
+                            }) {
+                                Text("Save to device")
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            OutlinedButton(onClick = { viewModel.discardReceivedFile(s) }) {
+                                Text("Discard")
+                            }
+                        }
+                    }
                 }
             }
             is TransferState.Success -> {
-                val s = state as TransferState.Success
                 Text(s.message, color = MaterialTheme.colorScheme.primary)
             }
             is TransferState.Error -> {
-                val e = state as TransferState.Error
-                Text("Error: ${e.exception}", color = MaterialTheme.colorScheme.error)
+                Text("Error: ${s.exception}", color = MaterialTheme.colorScheme.error)
             }
         }
 
@@ -121,8 +162,8 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                     }
                 }
             }
-        } else {
-            // Cancel button during transfer
+        } else if (state !is TransferState.ReceivedPendingSave && state !is TransferState.Saving) {
+            // Cancel button during active transfer (but not while saving/pending save)
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = { viewModel.cancelTransfer() }) {
                 Text("Cancel Transfer")
@@ -130,7 +171,7 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
         }
         
         Spacer(modifier = Modifier.height(16.dp))
-        if (state !is TransferState.Idle) {
+        if (state !is TransferState.Idle && state !is TransferState.ReceivedPendingSave && state !is TransferState.Saving) {
             TextButton(onClick = { viewModel.resetState() }) {
                 Text("Reset")
             }

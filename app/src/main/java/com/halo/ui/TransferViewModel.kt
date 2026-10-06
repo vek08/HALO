@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.halo.core.FileMetadata
 import com.halo.core.TcpReceiver
 import com.halo.core.TcpSender
 import com.halo.network.NetworkUtils
@@ -14,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 
 class TransferViewModel : ViewModel() {
 
@@ -36,7 +39,7 @@ class TransferViewModel : ViewModel() {
         _transferState.value = TransferState.Connecting
         transferJob = viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Save to app's cache directory temporarily to bypass raw File restrictions
+                // Save to app's cache directory temporarily
                 val outputDir = context.cacheDir
                 currentReceiver = TcpReceiver(port, outputDir)
                 currentReceiver?.setListener(object : TcpReceiver.ReceiverListener {
@@ -45,8 +48,13 @@ class TransferViewModel : ViewModel() {
                         _transferState.value = TransferState.Transferring(progress, bytesReceived, totalBytes)
                     }
 
-                    override fun onComplete(savedFile: File) {
-                        _transferState.value = TransferState.Success("File saved to ${savedFile.absolutePath}")
+                    override fun onComplete(savedFile: File, metadata: FileMetadata) {
+                        _transferState.value = TransferState.ReceivedPendingSave(
+                            tempFile = savedFile,
+                            originalName = metadata.fileName,
+                            mimeType = metadata.mimeType,
+                            fileSize = metadata.fileSize
+                        )
                         currentReceiver = null
                     }
 
@@ -91,7 +99,42 @@ class TransferViewModel : ViewModel() {
         }
     }
 
+    fun saveFileToDestination(context: Context, destinationUri: Uri, pendingState: TransferState.ReceivedPendingSave) {
+        _transferState.value = TransferState.Saving
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val outputStream = context.contentResolver.openOutputStream(destinationUri)
+                    ?: throw Exception("Could not open output stream for saving.")
+                
+                FileInputStream(pendingState.tempFile).use { inputStream ->
+                    outputStream.use { outStream ->
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                            outStream.write(buffer, 0, bytesRead)
+                        }
+                    }
+                }
+                
+                // Cleanup temp file after successful copy
+                pendingState.tempFile.delete()
+                _transferState.value = TransferState.Success("File saved successfully!")
+            } catch (e: Exception) {
+                _transferState.value = TransferState.Error("Failed to save: ${e.message}")
+            }
+        }
+    }
+
+    fun discardReceivedFile(pendingState: TransferState.ReceivedPendingSave) {
+        pendingState.tempFile.delete()
+        resetState()
+    }
+
     fun resetState() {
+        val currentState = _transferState.value
+        if (currentState is TransferState.ReceivedPendingSave) {
+            currentState.tempFile.delete()
+        }
         _transferState.value = TransferState.Idle
     }
 
@@ -99,6 +142,10 @@ class TransferViewModel : ViewModel() {
         currentReceiver?.stopListening()
         currentReceiver = null
         transferJob?.cancel()
+        val currentState = _transferState.value
+        if (currentState is TransferState.ReceivedPendingSave) {
+            currentState.tempFile.delete()
+        }
         _transferState.value = TransferState.Idle
     }
 }
