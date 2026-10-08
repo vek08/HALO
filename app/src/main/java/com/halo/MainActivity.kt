@@ -47,10 +47,11 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
     val state by viewModel.transferState.collectAsState()
     val localIp by viewModel.localIp.collectAsState()
     val discoveredDevices by viewModel.discoveredDevices.collectAsState()
+    val isDiscovering by viewModel.isDiscovering.collectAsState()
+    val selectedDevice by viewModel.selectedDevice.collectAsState()
 
     var receiverIp by remember { mutableStateOf("") }
     var receiverPort by remember { mutableStateOf(8080) }
-    var isDiscovering by remember { mutableStateOf(false) }
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -156,20 +157,38 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                         Button(onClick = { 
                             if (isDiscovering) {
                                 viewModel.stopDiscovery()
-                                isDiscovering = false
                             } else {
                                 viewModel.startDiscovery(appContext)
-                                isDiscovering = true
+                                receiverIp = ""
+                                receiverPort = 8080
                             }
                         }) {
-                            Text(if (isDiscovering) "Stop" else "Discover")
+                            Text(
+                                if (isDiscovering) "Stop"
+                                else if (selectedDevice != null) "Discover Again"
+                                else "Discover"
+                            )
                         }
                     }
                     if (isDiscovering) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                        Text("Scanning...", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    if (discoveredDevices.isEmpty()) {
+                    
+                    if (selectedDevice != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Selected: ${selectedDevice!!.name}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Text("${selectedDevice!!.host.hostAddress}:${selectedDevice!!.port}", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    } else if (discoveredDevices.isEmpty() && !isDiscovering) {
                         Text("No devices found", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
                         discoveredDevices.forEach { device ->
@@ -179,6 +198,7 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                                     .clickable {
                                         receiverIp = device.host.hostAddress ?: ""
                                         receiverPort = device.port
+                                        viewModel.selectDevice(device)
                                     }
                                     .padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically

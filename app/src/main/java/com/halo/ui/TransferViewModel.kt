@@ -36,6 +36,12 @@ class TransferViewModel : ViewModel() {
     private val _discoveredDevices = MutableStateFlow<List<DiscoveredDevice>>(emptyList())
     val discoveredDevices: StateFlow<List<DiscoveredDevice>> = _discoveredDevices
 
+    private val _isDiscovering = MutableStateFlow(false)
+    val isDiscovering: StateFlow<Boolean> = _isDiscovering
+
+    private val _selectedDevice = MutableStateFlow<DiscoveredDevice?>(null)
+    val selectedDevice: StateFlow<DiscoveredDevice?> = _selectedDevice
+
     init {
         Log.d("HALO_VM", "TransferViewModel initialized")
     }
@@ -58,11 +64,19 @@ class TransferViewModel : ViewModel() {
     }
 
     fun startDiscovery(context: Context) {
+        _selectedDevice.value = null
         getNsdManager(context).startDiscovery()
+        _isDiscovering.value = true
     }
 
     fun stopDiscovery() {
         nsdManager?.stopDiscovery()
+        _isDiscovering.value = false
+    }
+
+    fun selectDevice(device: DiscoveredDevice) {
+        _selectedDevice.value = device
+        stopDiscovery()
     }
 
     fun startListening(context: Context, port: Int) {
