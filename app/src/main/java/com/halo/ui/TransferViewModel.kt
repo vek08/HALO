@@ -26,6 +26,19 @@ import com.halo.network.QrGenerator
 
 class TransferViewModel : ViewModel() {
 
+    private fun getUserFriendlyErrorMessage(e: Exception): String {
+        val msg = e.message ?: ""
+        return when {
+            msg.contains("ECONNRESET") || msg.contains("Connection reset") -> "Connection lost."
+            msg.contains("Connection refused") -> "Receiver refused connection."
+            msg.contains("Transfer declined") -> "Transfer declined by receiver."
+            msg.contains("EHOSTUNREACH") -> "Device unreachable."
+            msg.contains("Socket closed") -> "Transfer cancelled."
+            else -> "An unexpected network error occurred."
+        }
+    }
+
+
     private val _transferState = MutableStateFlow<TransferState>(TransferState.Idle)
     val transferState: StateFlow<TransferState> = _transferState
     
@@ -33,6 +46,12 @@ class TransferViewModel : ViewModel() {
     val localIp: StateFlow<String> = _localIp
 
     private var currentReceiver: TcpReceiver? = null
+
+    private var lastRecvTime = 0L
+    private var lastRecvBytes = 0L
+    private var lastSendTime = 0L
+    private var lastSendBytes = 0L
+
     private var transferJob: Job? = null
 
     private var nsdManager: NsdDiscoveryManager? = null
@@ -117,8 +136,16 @@ class TransferViewModel : ViewModel() {
                     }
 
                     override fun onProgress(bytesReceived: Long, totalBytes: Long) {
-                        val progress = if (totalBytes > 0) bytesReceived.toFloat() / totalBytes else 0f
-                        _transferState.value = TransferState.Transferring(progress, bytesReceived, totalBytes)
+                        val currentTime = System.currentTimeMillis()
+                        val timeDiff = currentTime - lastRecvTime
+                        if (timeDiff >= 200 || bytesReceived == totalBytes) {
+                            val bytesDiff = bytesReceived - lastRecvBytes
+                            val speedMbps = if (timeDiff > 0) (bytesDiff * 1000.0) / timeDiff / (1024.0 * 1024.0) else 0.0
+                            val progress = if (totalBytes > 0) bytesReceived.toFloat() / totalBytes else 0f
+                            _transferState.value = TransferState.Transferring(progress, bytesReceived, totalBytes, speedMbps)
+                            lastRecvTime = currentTime
+                            lastRecvBytes = bytesReceived
+                        }
                     }
 
                     override fun onComplete(savedFile: File, metadata: FileMetadata) {
@@ -137,7 +164,7 @@ class TransferViewModel : ViewModel() {
                         Log.e("HALO_VM", "Receiver Error", e)
                         getNsdManager(context).unregisterService()
                         if (e.message != "Socket closed") {
-                            _transferState.value = TransferState.Error(e.message ?: "Unknown error")
+                            _transferState.value = TransferState.Error(getUserFriendlyErrorMessage(e))
                         }
                     }
                 })
@@ -145,7 +172,7 @@ class TransferViewModel : ViewModel() {
             } catch (e: Exception) {
                 Log.e("HALO_VM", "startListening Exception", e)
                 getNsdManager(context).unregisterService()
-                _transferState.value = TransferState.Error(e.message ?: "Unknown error")
+                _transferState.value = TransferState.Error(getUserFriendlyErrorMessage(e))
             }
         }
     }
@@ -188,10 +215,20 @@ class TransferViewModel : ViewModel() {
                 val inputStream = context.contentResolver.openInputStream(uri) 
                     ?: throw Exception("Could not open input stream")
 
+                lastSendTime = System.currentTimeMillis()
+                lastSendBytes = 0L
                 val sender = TcpSender(ip, port)
                 sender.setProgressListener { bytesSent, totalBytes ->
-                    val progress = if (totalBytes > 0) bytesSent.toFloat() / totalBytes else 0f
-                    _transferState.value = TransferState.Transferring(progress, bytesSent, totalBytes)
+                    val currentTime = System.currentTimeMillis()
+                    val timeDiff = currentTime - lastSendTime
+                    if (timeDiff >= 200 || bytesSent == totalBytes) {
+                        val bytesDiff = bytesSent - lastSendBytes
+                        val speedMbps = if (timeDiff > 0) (bytesDiff * 1000.0) / timeDiff / (1024.0 * 1024.0) else 0.0
+                        val progress = if (totalBytes > 0) bytesSent.toFloat() / totalBytes else 0f
+                        _transferState.value = TransferState.Transferring(progress, bytesSent, totalBytes, speedMbps)
+                        lastSendTime = currentTime
+                        lastSendBytes = bytesSent
+                    }
                 }
 
                 inputStream.use { stream ->
@@ -199,7 +236,7 @@ class TransferViewModel : ViewModel() {
                 }
                 
                 Log.d("HALO_VM", "Send complete")
-                _transferState.value = TransferState.Success("Transfer Complete")
+                _transferState.value = TransferState.Success("File sent successfully", fileName, fileSize)
             } catch (e: Exception) {
                 Log.e("HALO_VM", "Send Error", e)
                 _transferState.value = TransferState.Error("Could not connect to device: ${e.message}")
@@ -235,7 +272,7 @@ class TransferViewModel : ViewModel() {
                 val deleted = pendingState.tempFile.delete()
                 Log.d("HALO_VM", "Temp file deleted: $deleted")
                 
-                _transferState.value = TransferState.Success("File saved successfully!")
+                _transferState.value = TransferState.Success("File received successfully", pendingState.originalName, pendingState.fileSize)
                 Log.d("HALO_VM", "State updated to Success.")
             } catch (e: Exception) {
                 Log.e("HALO_VM", "Save Failed", e)

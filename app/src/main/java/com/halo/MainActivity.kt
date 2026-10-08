@@ -115,6 +115,10 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
         }
     )
 
+    fun formatSpeed(speedMbps: Double): String {
+        return String.format("%.1f MB/s", speedMbps)
+    }
+
     fun goHome() {
         viewModel.cancelTransfer()
         if (isDiscovering) viewModel.stopDiscovery()
@@ -124,13 +128,6 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
     }
 
     BackHandler(currentScreen != AppScreen.Home) { goHome() }
-
-    LaunchedEffect(state) {
-        if (state is TransferState.Success || state is TransferState.Error) {
-            delay(3000)
-            goHome()
-        }
-    }
 
     fun launchScanner() {
         val options = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
@@ -250,26 +247,53 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                         }
 
                         Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (state is TransferState.Connecting || state is TransferState.Transferring) {
+                            if (state is TransferState.Success) {
+                                val s = state as TransferState.Success
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(56.dp))
+                                    }
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    Text(s.message, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = OliveText, textAlign = TextAlign.Center)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    if (s.fileName.isNotEmpty()) {
+                                        Text(s.fileName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium, color = OliveText, textAlign = TextAlign.Center)
+                                        Text("${s.fileSize / 1024 / 1024} MB", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f))
+                                    }
+                                }
+                            } else if (state is TransferState.Error) {
+                                val s = state as TransferState.Error
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Warning, contentDescription = null, tint = OliveError, modifier = Modifier.size(56.dp))
+                                    }
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    Text("Transfer failed", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = OliveText)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(s.userFriendlyMessage, style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f), textAlign = TextAlign.Center)
+                                }
+                            } else if (state is TransferState.Connecting || state is TransferState.Transferring) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
                                         Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(48.dp))
                                     }
                                     Spacer(modifier = Modifier.height(32.dp))
-                                    Text(if (state is TransferState.Connecting) "Waiting for response..." else "Sending File", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
+                                    Text(if (state is TransferState.Connecting) "Waiting for response..." else "Sending...", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
                                     
                                     Spacer(modifier = Modifier.height(24.dp))
                                     if (state is TransferState.Transferring) {
                                         val s = state as TransferState.Transferring
+                                        Text(selectedFileName, style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.8f))
+                                        Spacer(modifier = Modifier.height(16.dp))
                                         LinearProgressIndicator(progress = { s.progress }, modifier = Modifier.fillMaxWidth(0.8f).height(12.dp).clip(RoundedCornerShape(6.dp)), color = OlivePrimary)
                                         Spacer(modifier = Modifier.height(16.dp))
                                         Text("${(s.progress * 100).toInt()}%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = OliveText)
                                         Text("${s.bytesSent / 1024 / 1024} MB / ${s.totalBytes / 1024 / 1024} MB", color = OliveText.copy(alpha=0.6f))
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text("Speed: ${formatSpeed(s.speedMbps)}", color = OliveText.copy(alpha=0.6f))
                                     }
                                 }
                             } else if (selectedDevice == null) {
@@ -280,7 +304,7 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(32.dp))
-                                    Text("Searching for receivers\nnearby...", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.8f), textAlign = TextAlign.Center)
+                                    Text("Searching for receivers\\nnearby...", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.8f), textAlign = TextAlign.Center)
                                     
                                     if (discoveredDevices.isNotEmpty()) {
                                         Spacer(modifier = Modifier.height(24.dp))
@@ -351,7 +375,16 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                             }
                         }
 
-                        if (state is TransferState.Connecting || state is TransferState.Transferring) {
+                        if (state is TransferState.Success || state is TransferState.Error) {
+                            Button(
+                                onClick = { goHome() },
+                                modifier = Modifier.fillMaxWidth().height(64.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = OlivePrimary),
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Text("Back to Home", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            }
+                        } else if (state is TransferState.Connecting || state is TransferState.Transferring) {
                             OutlinedButton(
                                 onClick = { goHome() },
                                 modifier = Modifier.fillMaxWidth().height(64.dp),
@@ -399,22 +432,47 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                         }
 
                         Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (state is TransferState.ReceivedPendingSave) {
+                            if (state is TransferState.Success) {
+                                val s = state as TransferState.Success
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(56.dp))
+                                    }
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    Text(s.message, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = OliveText, textAlign = TextAlign.Center)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    if (s.fileName.isNotEmpty()) {
+                                        Text(s.fileName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium, color = OliveText, textAlign = TextAlign.Center)
+                                        Text("${s.fileSize / 1024 / 1024} MB", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f))
+                                    }
+                                }
+                            } else if (state is TransferState.Error) {
+                                val s = state as TransferState.Error
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Warning, contentDescription = null, tint = OliveError, modifier = Modifier.size(56.dp))
+                                    }
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    Text("Transfer failed", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = OliveText)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(s.userFriendlyMessage, style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f), textAlign = TextAlign.Center)
+                                }
+                            } else if (state is TransferState.ReceivedPendingSave) {
                                 val s = state as TransferState.ReceivedPendingSave
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
                                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(56.dp))
                                     }
                                     Spacer(modifier = Modifier.height(32.dp))
-                                    Text("File Received", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = OliveText)
+                                    Text("File Transfer Complete", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
                                     Spacer(modifier = Modifier.height(16.dp))
                                     Text(s.originalName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium, color = OliveText, textAlign = TextAlign.Center)
                                     Text("${s.fileSize / 1024 / 1024} MB", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("Tap Save below to keep the file", style = MaterialTheme.typography.labelMedium, color = OlivePrimary)
                                 }
                             } else if (state is TransferState.RequestPending) {
                                 val s = state as TransferState.RequestPending
@@ -453,6 +511,8 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                                     Spacer(modifier = Modifier.height(16.dp))
                                     Text("${(s.progress * 100).toInt()}%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = OliveText)
                                     Text("${s.bytesSent / 1024 / 1024} MB / ${s.totalBytes / 1024 / 1024} MB", color = OliveText.copy(alpha=0.6f))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("Speed: ${formatSpeed(s.speedMbps)}", color = OliveText.copy(alpha=0.6f))
                                 }
                             } else {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -470,7 +530,7 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                                         Spacer(modifier = Modifier.height(32.dp))
                                         Text("Ready to receive", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
                                         Spacer(modifier = Modifier.height(8.dp))
-                                        Text("Scan this code from another device\nor select from Nearby Devices", style = MaterialTheme.typography.bodyLarge, color = OliveText.copy(alpha=0.6f), textAlign = TextAlign.Center)
+                                        Text("Scan this code from another device\\nor select from Nearby Devices", style = MaterialTheme.typography.bodyLarge, color = OliveText.copy(alpha=0.6f), textAlign = TextAlign.Center)
                                     } else {
                                         CircularProgressIndicator(color = OlivePrimary)
                                         Spacer(modifier = Modifier.height(24.dp))
@@ -480,7 +540,16 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                             }
                         }
 
-                        if (state is TransferState.RequestPending) {
+                        if (state is TransferState.Success || state is TransferState.Error) {
+                            Button(
+                                onClick = { goHome() },
+                                modifier = Modifier.fillMaxWidth().height(64.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = OlivePrimary),
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Text("Back to Home", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            }
+                        } else if (state is TransferState.RequestPending) {
                             val s = state as TransferState.RequestPending
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                 OutlinedButton(onClick = { 
@@ -504,36 +573,15 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                                     Text("Save File", style = MaterialTheme.typography.titleMedium)
                                 }
                             }
+                        } else if (state is TransferState.Connecting || state is TransferState.Transferring) {
+                            OutlinedButton(
+                                onClick = { goHome() },
+                                modifier = Modifier.fillMaxWidth().height(64.dp),
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Text("Cancel Transfer", style = MaterialTheme.typography.titleMedium, color = OliveText)
+                            }
                         }
-                    }
-                }
-            }
-        }
-
-        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.BottomCenter) {
-            AnimatedVisibility(visible = state is TransferState.Success) {
-                val msg = (state as? TransferState.Success)?.message ?: "File transferred successfully"
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = OlivePrimary),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Row(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(msg, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                    }
-                }
-            }
-            AnimatedVisibility(visible = state is TransferState.Error) {
-                val msg = (state as? TransferState.Error)?.exception ?: "Transfer failed"
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = OliveError),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Row(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Warning, contentDescription = null, tint = Color.White)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(msg, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                     }
                 }
             }
