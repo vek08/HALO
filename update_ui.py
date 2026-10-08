@@ -1,133 +1,138 @@
+import os
 import re
 
 with open("app/src/main/java/com/halo/MainActivity.kt", "r", encoding="utf-8") as f:
     content = f.read()
 
-replacement = """            if (selectedDevice != null) {
-                // SELECTED DEVICE UI
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Connected to", style = MaterialTheme.typography.labelMedium)
-                        Text("📱 ${selectedDevice!!.name}", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        Text("Ready to receive", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(onClick = { viewModel.resetState() }) {
-                            Text("Change Device")
-                        }
-                    }
-                }
-            } else {
-                // NEARBY DEVICES (DISCOVERY)
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Nearby Devices", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                            Button(onClick = { 
-                                if (isDiscovering) {
-                                    viewModel.stopDiscovery()
-                                } else {
-                                    viewModel.startDiscovery(appContext)
-                                }
-                            }) {
-                                Text(if (isDiscovering) "Stop" else "Discover")
-                            }
-                        }
-                        if (isDiscovering) {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-                            Text("Discovering nearby devices...", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        if (discoveredDevices.isEmpty() && !isDiscovering) {
-                            Text("No device selected", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        } else {
-                            if (discoveredDevices.isNotEmpty()) {
-                                Text("${discoveredDevices.size} device(s) found", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                            }
-                            discoveredDevices.forEach { device ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { viewModel.selectDevice(device) }
-                                        .padding(vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text("📱 ${device.name}", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                        Text("Ready to connect", style = MaterialTheme.typography.bodySmall)
-                                    }
-                                    Button(onClick = { viewModel.selectDevice(device) }) {
-                                        Text("Select")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+# Update SendFlow Connecting Text
+content = content.replace('Text(if (state is TransferState.Connecting) "Connecting..." else "Sending File"',
+                          'Text(if (state is TransferState.Connecting) "Waiting for response..." else "Sending File"')
 
-                Spacer(modifier = Modifier.height(16.dp))
 
-                // QR PAIRING SENDER
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Pair with QR", style = MaterialTheme.typography.titleMedium)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = {
-                            val options = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
-                                .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
-                                .build()
-                            val scanner = com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(context, options)
-                            scanner.startScan()
-                                .addOnSuccessListener { barcode ->
-                                    barcode.rawValue?.let { rawValue ->
-                                        val data = com.halo.network.QrPairingData.fromJsonString(rawValue)
-                                        if (data != null) {
-                                            viewModel.selectDeviceFromQr(data)
-                                            android.widget.Toast.makeText(context, "Scanned: ${data.deviceName}", android.widget.Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            android.widget.Toast.makeText(context, "Invalid HALO QR format", android.widget.Toast.LENGTH_LONG).show()
+# Update ReceiveFlow states handling
+receive_flow_pattern = r'AppScreen\.ReceiveFlow -> \{.*?\}(?=\s*\}\s*// Global Overlays for Success/Error)'
+
+new_receive_flow = """AppScreen.ReceiveFlow -> {
+                    Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 16.dp)) {
+                            IconButton(onClick = { goHome() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = OliveText) }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Receive File", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (state is TransferState.ReceivedPendingSave) {
+                                val s = state as TransferState.ReceivedPendingSave
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(56.dp))
+                                    }
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    Text("File Received", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = OliveText)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(s.originalName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium, color = OliveText, textAlign = TextAlign.Center)
+                                    Text("${s.fileSize / 1024 / 1024} MB", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f))
+                                }
+                            } else if (state is TransferState.RequestPending) {
+                                val s = state as TransferState.RequestPending
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Info, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(56.dp))
+                                    }
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    Text("Incoming File", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = OliveText)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text("A device wants to send you a file.", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f), textAlign = TextAlign.Center)
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                    
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                                        shape = RoundedCornerShape(16.dp),
+                                        elevation = CardDefaults.cardElevation(2.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(s.metadata.fileName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = OliveText, textAlign = TextAlign.Center)
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text("${s.metadata.fileSize / (1024 * 1024)} MB", style = MaterialTheme.typography.bodyMedium, color = OliveText.copy(alpha=0.6f))
                                         }
-                                    } ?: android.widget.Toast.makeText(context, "Empty QR code", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
                                 }
-                                .addOnFailureListener { e ->
-                                    android.widget.Toast.makeText(context, "Scan failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                            } else if (state is TransferState.Transferring) {
+                                val s = state as TransferState.Transferring
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(48.dp))
+                                    }
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    Text("Receiving File", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                    LinearProgressIndicator(progress = { s.progress }, modifier = Modifier.fillMaxWidth(0.8f).height(12.dp).clip(RoundedCornerShape(6.dp)), color = OlivePrimary)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text("${(s.progress * 100).toInt()}%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = OliveText)
+                                    Text("${s.bytesSent / 1024 / 1024} MB / ${s.totalBytes / 1024 / 1024} MB", color = OliveText.copy(alpha=0.6f))
                                 }
-                        }) {
-                            Text("Scan QR")
+                            } else {
+                                // Waiting / Connecting
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    val qrBitmap = viewModel.receiverQrBitmap.collectAsState().value
+                                    if (qrBitmap != null) {
+                                        Card(
+                                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                                            shape = RoundedCornerShape(32.dp),
+                                            elevation = CardDefaults.cardElevation(4.dp)
+                                        ) {
+                                            Column(modifier = Modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Image(bitmap = qrBitmap.asImageBitmap(), contentDescription = "QR Code", modifier = Modifier.size(220.dp))
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(32.dp))
+                                        Text("Ready to receive", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text("Scan this code from another device\\nor select from Nearby Devices", style = MaterialTheme.typography.bodyLarge, color = OliveText.copy(alpha=0.6f), textAlign = TextAlign.Center)
+                                    } else {
+                                        CircularProgressIndicator(color = OlivePrimary)
+                                        Spacer(modifier = Modifier.height(24.dp))
+                                        Text("Starting receiver...", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f))
+                                    }
+                                }
+                            }
+                        }
+
+                        // Bottom Actions for Receive Flow
+                        if (state is TransferState.RequestPending) {
+                            val s = state as TransferState.RequestPending
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                OutlinedButton(onClick = { 
+                                    Thread { s.decision.decline() }.start() 
+                                }, modifier = Modifier.weight(1f).height(64.dp), shape = RoundedCornerShape(20.dp)) {
+                                    Text("Decline", style = MaterialTheme.typography.titleMedium, color = OliveText)
+                                }
+                                Button(onClick = { 
+                                    Thread { s.decision.accept() }.start()
+                                }, modifier = Modifier.weight(1f).height(64.dp), colors = ButtonDefaults.buttonColors(containerColor = OlivePrimary), shape = RoundedCornerShape(20.dp)) {
+                                    Text("Accept", style = MaterialTheme.typography.titleMedium)
+                                }
+                            }
+                        } else if (state is TransferState.ReceivedPendingSave) {
+                            val s = state as TransferState.ReceivedPendingSave
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                OutlinedButton(onClick = { viewModel.discardReceivedFile(s); goHome() }, modifier = Modifier.weight(1f).height(64.dp), shape = RoundedCornerShape(20.dp)) {
+                                    Text("Discard", style = MaterialTheme.typography.titleMedium, color = OliveText)
+                                }
+                                Button(onClick = { saveFileLauncher.launch(s.originalName) }, modifier = Modifier.weight(1f).height(64.dp), colors = ButtonDefaults.buttonColors(containerColor = OlivePrimary), shape = RoundedCornerShape(20.dp)) {
+                                    Text("Save File", style = MaterialTheme.typography.titleMedium)
+                                }
+                            }
                         }
                     }
-                }
-            }
+                }"""
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // SENDER CONTROLS
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Send File", style = MaterialTheme.typography.titleMedium)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
-                        Text(if (selectedUri != null) "File Selected" else "Pick File")
-                    }
-                    Button(
-                        onClick = {
-                            selectedUri?.let { viewModel.sendFile(appContext, it) }
-                        },
-                        enabled = selectedUri != null && selectedDevice != null,
-                        modifier = Modifier.padding(top = 8.dp)
-                    ) {
-                        Text("Send File")
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-"""
-
-pattern = re.compile(r'            // NEARBY DEVICES \(DISCOVERY\).*?Spacer\(modifier = Modifier\.height\(16\.dp\)\)\n', re.DOTALL)
-new_content = pattern.sub(replacement, content, count=1)
+content = re.sub(receive_flow_pattern, new_receive_flow.replace("\\", "\\\\"), content, flags=re.DOTALL)
 
 with open("app/src/main/java/com/halo/MainActivity.kt", "w", encoding="utf-8") as f:
-    f.write(new_content)
-
-print("Replacement done.")
+    f.write(content)

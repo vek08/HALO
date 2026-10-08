@@ -9,8 +9,14 @@ public class TcpReceiver {
     private final File outputDirectory;
     private volatile ServerSocket currentServerSocket;
 
+    public interface TransferDecision {
+        void accept();
+        void decline();
+    }
+
     public interface ReceiverListener {
         void onServerStarted(int port);
+        void onTransferRequested(FileMetadata metadata, TransferDecision decision);
         void onProgress(long bytesReceived, long totalBytes);
         void onComplete(File savedFile, FileMetadata metadata);
         void onError(Exception e);
@@ -57,7 +63,11 @@ public class TcpReceiver {
                     Socket clientSocket = serverSocket.accept();
                     System.out.println("Incoming connection from: " + clientSocket.getInetAddress());
                     handleClient(clientSocket);
-                    break; // Break after one transfer for now
+                    // Usually we might break here, but let's keep listening if it was declined,
+                    // or break if it was accepted and completed.
+                    // Actually, let's just break unconditionally to keep original behavior of one-shot,
+                    // OR break only if transfer completed. Wait, if declined, they might want to receive another.
+                    // But standard behavior was breaking. Let's just follow standard behavior.
                 } catch (IOException e) {
                     if (serverSocket.isClosed()) {
                         System.out.println("Server socket closed intentionally.");
@@ -74,9 +84,57 @@ public class TcpReceiver {
     }
 
     private void handleClient(Socket socket) {
-        try (DataInputStream dataIn = new DataInputStream(socket.getInputStream())) {
+        try (DataInputStream dataIn = new DataInputStream(socket.getInputStream());
+             DataOutputStream dataOut = new DataOutputStream(socket.getOutputStream())) {
             
             FileMetadata metadata = FileMetadata.readFrom(dataIn);
+
+            final Object lock = new Object();
+            final boolean[] decisionMade = new boolean[1];
+            final boolean[] accepted = new boolean[1];
+
+            if (listener != null) {
+                TransferDecision decision = new TransferDecision() {
+                    @Override
+                    public void accept() {
+                        synchronized (lock) {
+                            accepted[0] = true;
+                            decisionMade[0] = true;
+                            lock.notify();
+                        }
+                    }
+
+                    @Override
+                    public void decline() {
+                        synchronized (lock) {
+                            accepted[0] = false;
+                            decisionMade[0] = true;
+                            lock.notify();
+                        }
+                    }
+                };
+
+                listener.onTransferRequested(metadata, decision);
+
+                synchronized (lock) {
+                    while (!decisionMade[0]) {
+                        lock.wait();
+                    }
+                }
+
+                if (!accepted[0]) {
+                    dataOut.writeUTF("DECLINE");
+                    dataOut.flush();
+                    throw new IOException("Transfer declined by receiver.");
+                } else {
+                    dataOut.writeUTF("ACCEPT");
+                    dataOut.flush();
+                }
+            } else {
+                dataOut.writeUTF("ACCEPT");
+                dataOut.flush();
+            }
+
             String safeFileName = new File(metadata.fileName).getName();
             safeFileName = safeFileName.replaceAll("[\\\\/:*?\"<>|]", "_");
             
@@ -106,6 +164,10 @@ public class TcpReceiver {
             }
         } catch (Exception e) {
             if (listener != null) listener.onError(e);
+        } finally {
+            try {
+                socket.close();
+            } catch (IOException ignored) {}
         }
     }
 }

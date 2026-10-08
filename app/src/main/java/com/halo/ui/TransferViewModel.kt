@@ -110,6 +110,12 @@ class TransferViewModel : ViewModel() {
                         _receiverQrBitmap.value = QrGenerator.generateQrBitmap(qrData.toJsonString())
                     }
 
+                    override fun onTransferRequested(metadata: FileMetadata, decision: com.halo.core.TcpReceiver.TransferDecision) {
+                        Log.d("HALO_VM", "Transfer requested: ${metadata.fileName}")
+                        // We must expose this to the UI
+                        _transferState.value = TransferState.RequestPending(metadata, decision)
+                    }
+
                     override fun onProgress(bytesReceived: Long, totalBytes: Long) {
                         val progress = if (totalBytes > 0) bytesReceived.toFloat() / totalBytes else 0f
                         _transferState.value = TransferState.Transferring(progress, bytesReceived, totalBytes)

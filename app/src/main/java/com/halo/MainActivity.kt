@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,12 +41,11 @@ import com.halo.ui.TransferState
 import com.halo.ui.TransferViewModel
 import kotlinx.coroutines.delay
 
-// OLIVE COLOR PALETTE
-val OlivePrimary = Color(0xFF556B2F) // Rich olive green
-val OliveSecondary = Color(0xFF8F9779) // Muted sage
-val OliveBackground = Color(0xFFF9F6F0) // Warm off-white / cream
-val OliveSurface = Color(0xFFFFFFFF) // Pure white for cards to pop
-val OliveText = Color(0xFF283618) // Dark charcoal/olive for text
+val OlivePrimary = Color(0xFF556B2F)
+val OliveSecondary = Color(0xFF8F9779)
+val OliveBackground = Color(0xFFF9F6F0)
+val OliveSurface = Color(0xFFFFFFFF)
+val OliveText = Color(0xFF283618)
 val OliveError = Color(0xFFBC4749)
 
 enum class AppScreen { Home, SendFlow, ReceiveFlow }
@@ -125,7 +125,6 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
 
     BackHandler(currentScreen != AppScreen.Home) { goHome() }
 
-    // Auto-reset on success/error
     LaunchedEffect(state) {
         if (state is TransferState.Success || state is TransferState.Error) {
             delay(3000)
@@ -159,8 +158,6 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Spacer(modifier = Modifier.height(48.dp))
-                        
-                        // HERO SECTION
                         Box(
                             modifier = Modifier.size(120.dp).background(Color.White, RoundedCornerShape(40.dp)),
                             contentAlignment = Alignment.Center
@@ -171,12 +168,9 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                         Text("HALO", style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.ExtraBold, color = OliveText)
                         Spacer(modifier = Modifier.height(8.dp))
                         Text("Share files directly nearby", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f))
-                        
                         Spacer(modifier = Modifier.height(64.dp))
 
-                        // PRIMARY ACTIONS
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            // Send Card
                             Card(
                                 modifier = Modifier.weight(1f).aspectRatio(0.9f).clickable { 
                                     currentScreen = AppScreen.SendFlow
@@ -188,15 +182,13 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                             ) {
                                 Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                                     Box(modifier = Modifier.size(72.dp).background(OlivePrimary, CircleShape), contentAlignment = Alignment.Center) {
-                                        @Suppress("DEPRECATION")
-                                        Icon(Icons.Default.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(36.dp))
+                                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(36.dp))
                                     }
                                     Spacer(modifier = Modifier.height(16.dp))
                                     Text("Send", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = OliveText)
                                 }
                             }
 
-                            // Receive Card
                             Card(
                                 modifier = Modifier.weight(1f).aspectRatio(0.9f).clickable { 
                                     currentScreen = AppScreen.ReceiveFlow
@@ -217,8 +209,6 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                         }
 
                         Spacer(modifier = Modifier.height(48.dp))
-
-                        // CONNECTION METHODS
                         Text("Connection methods", style = MaterialTheme.typography.labelLarge, color = OliveText.copy(alpha=0.5f))
                         Spacer(modifier = Modifier.height(16.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -253,63 +243,123 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
 
                 AppScreen.SendFlow -> {
                     Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 24.dp)) {
-                            IconButton(onClick = { goHome() }) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = OliveText) }
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 16.dp)) {
+                            IconButton(onClick = { goHome() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = OliveText) }
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Send File", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
                         }
 
-                        if (state is TransferState.Connecting || state is TransferState.Transferring) {
-                            Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
-                                    @Suppress("DEPRECATION")
-                                    Icon(Icons.Default.Send, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(48.dp))
-                                }
-                                Spacer(modifier = Modifier.height(32.dp))
-                                Text(if (state is TransferState.Connecting) "Connecting..." else "Sending File", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
-                                
-                                Spacer(modifier = Modifier.height(24.dp))
-                                if (state is TransferState.Transferring) {
-                                    val s = state as TransferState.Transferring
-                                    LinearProgressIndicator(progress = { s.progress }, modifier = Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp)), color = OlivePrimary)
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Text("${(s.progress * 100).toInt()}%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = OliveText)
-                                    Text("${s.bytesSent / 1024 / 1024} MB / ${s.totalBytes / 1024 / 1024} MB", color = OliveText.copy(alpha=0.6f))
-                                }
-                            }
-                        } else if (selectedDevice == null) {
-                            // Radar/Discovery View
-                            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Spacer(modifier = Modifier.height(32.dp))
-                                Box(modifier = Modifier.size(150.dp).background(OliveSecondary.copy(alpha=0.2f), CircleShape), contentAlignment = Alignment.Center) {
-                                    Box(modifier = Modifier.size(100.dp).background(OliveSecondary.copy(alpha=0.4f), CircleShape), contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.Search, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(48.dp))
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (state is TransferState.Connecting || state is TransferState.Transferring) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(48.dp))
+                                    }
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    Text(if (state is TransferState.Connecting) "Waiting for response..." else "Sending File", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
+                                    
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                    if (state is TransferState.Transferring) {
+                                        val s = state as TransferState.Transferring
+                                        LinearProgressIndicator(progress = { s.progress }, modifier = Modifier.fillMaxWidth(0.8f).height(12.dp).clip(RoundedCornerShape(6.dp)), color = OlivePrimary)
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text("${(s.progress * 100).toInt()}%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = OliveText)
+                                        Text("${s.bytesSent / 1024 / 1024} MB / ${s.totalBytes / 1024 / 1024} MB", color = OliveText.copy(alpha=0.6f))
                                     }
                                 }
-                                Spacer(modifier = Modifier.height(32.dp))
-                                Text("Searching for receivers nearby...", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.8f))
-                                Spacer(modifier = Modifier.height(24.dp))
-                                
-                                discoveredDevices.forEach { device ->
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).clickable { viewModel.selectDevice(device) },
-                                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                                        shape = RoundedCornerShape(20.dp),
-                                        elevation = CardDefaults.cardElevation(2.dp)
-                                    ) {
-                                        Row(modifier = Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Box(modifier = Modifier.size(48.dp).background(OlivePrimary.copy(alpha=0.1f), CircleShape), contentAlignment = Alignment.Center) {
-                                                Icon(Icons.Default.Phone, contentDescription = null, tint = OlivePrimary)
+                            } else if (selectedDevice == null) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(modifier = Modifier.size(150.dp).background(OliveSecondary.copy(alpha=0.2f), CircleShape), contentAlignment = Alignment.Center) {
+                                        Box(modifier = Modifier.size(100.dp).background(OliveSecondary.copy(alpha=0.4f), CircleShape), contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Default.Search, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(48.dp))
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    Text("Searching for receivers\nnearby...", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.8f), textAlign = TextAlign.Center)
+                                    
+                                    if (discoveredDevices.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(24.dp))
+                                        Column(modifier = Modifier.fillMaxWidth()) {
+                                            discoveredDevices.forEach { device ->
+                                                Card(
+                                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { viewModel.selectDevice(device) },
+                                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                                    shape = RoundedCornerShape(20.dp),
+                                                    elevation = CardDefaults.cardElevation(2.dp)
+                                                ) {
+                                                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                        Box(modifier = Modifier.size(48.dp).background(OlivePrimary.copy(alpha=0.1f), CircleShape), contentAlignment = Alignment.Center) {
+                                                            Icon(Icons.Default.Phone, contentDescription = null, tint = OlivePrimary)
+                                                        }
+                                                        Spacer(modifier = Modifier.width(16.dp))
+                                                        Column {
+                                                            Text(device.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = OliveText)
+                                                            Text("Tap to connect", style = MaterialTheme.typography.bodyMedium, color = OliveText.copy(alpha=0.6f))
+                                                        }
+                                                    }
+                                                }
                                             }
-                                            Spacer(modifier = Modifier.width(16.dp))
-                                            Column {
-                                                Text(device.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = OliveText)
-                                                Text("Tap to connect", style = MaterialTheme.typography.bodyMedium, color = OliveText.copy(alpha=0.6f))
+                                        }
+                                    }
+                                }
+                            } else {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Phone, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(48.dp))
+                                    }
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text("Connected to", style = MaterialTheme.typography.bodyMedium, color = OliveText.copy(alpha=0.6f))
+                                    Text(selectedDevice!!.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
+                                    
+                                    Spacer(modifier = Modifier.height(48.dp))
+                                    
+                                    if (selectedUri == null) {
+                                        OutlinedButton(
+                                            onClick = { filePickerLauncher.launch(arrayOf("*/*")) },
+                                            modifier = Modifier.size(150.dp),
+                                            shape = CircleShape
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(40.dp), tint = OlivePrimary)
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Text("Pick File", style = MaterialTheme.typography.titleMedium, color = OliveText)
+                                            }
+                                        }
+                                    } else {
+                                        Card(
+                                            modifier = Modifier.fillMaxWidth(0.9f).clickable { filePickerLauncher.launch(arrayOf("*/*")) },
+                                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                                            shape = RoundedCornerShape(20.dp),
+                                            elevation = CardDefaults.cardElevation(2.dp)
+                                        ) {
+                                            Column(modifier = Modifier.padding(24.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(48.dp))
+                                                Spacer(modifier = Modifier.height(16.dp))
+                                                Text(selectedFileName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = OliveText, textAlign = TextAlign.Center)
+                                                Text("${selectedFileSize / 1024} KB", style = MaterialTheme.typography.bodyMedium, color = OliveText.copy(alpha=0.6f))
+                                                Spacer(modifier = Modifier.height(12.dp))
+                                                Text("Tap to change file", style = MaterialTheme.typography.labelMedium, color = OlivePrimary)
                                             }
                                         }
                                     }
                                 }
                             }
+                        }
+
+                        if (state is TransferState.Connecting || state is TransferState.Transferring) {
+                            OutlinedButton(
+                                onClick = { goHome() },
+                                modifier = Modifier.fillMaxWidth().height(64.dp),
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Text("Cancel Transfer", style = MaterialTheme.typography.titleMedium, color = OliveText)
+                            }
+                        } else if (selectedDevice == null) {
                             Button(
                                 onClick = { launchScanner() },
                                 modifier = Modifier.fillMaxWidth().height(64.dp),
@@ -321,58 +371,18 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                                 Text("Scan QR code", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             }
                         } else {
-                            // Device Selected -> File Picker -> Send
-                            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Spacer(modifier = Modifier.height(32.dp))
-                                Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.Phone, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(48.dp))
-                                }
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text("Connected to", style = MaterialTheme.typography.bodyMedium, color = OliveText.copy(alpha=0.6f))
-                                Text(selectedDevice!!.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
-                                
-                                Spacer(modifier = Modifier.height(48.dp))
-                                
-                                if (selectedUri == null) {
-                                    OutlinedButton(
-                                        onClick = { filePickerLauncher.launch(arrayOf("*/*")) },
-                                        modifier = Modifier.size(150.dp),
-                                        shape = CircleShape
-                                    ) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(40.dp), tint = OlivePrimary)
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Text("Pick File", style = MaterialTheme.typography.titleMedium, color = OliveText)
-                                        }
-                                    }
-                                } else {
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth().clickable { filePickerLauncher.launch(arrayOf("*/*")) },
-                                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                                        shape = RoundedCornerShape(20.dp),
-                                        elevation = CardDefaults.cardElevation(2.dp)
-                                    ) {
-                                        Column(modifier = Modifier.padding(24.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(48.dp))
-                                            Spacer(modifier = Modifier.height(16.dp))
-                                            Text(selectedFileName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = OliveText, textAlign = TextAlign.Center)
-                                            Text("${selectedFileSize / 1024} KB", style = MaterialTheme.typography.bodyMedium, color = OliveText.copy(alpha=0.6f))
-                                            Spacer(modifier = Modifier.height(12.dp))
-                                            Text("Tap to change file", style = MaterialTheme.typography.labelMedium, color = OlivePrimary)
-                                        }
-                                    }
-                                }
-                            }
-                            
                             Button(
                                 onClick = { selectedUri?.let { viewModel.sendFile(appContext, it) } },
                                 enabled = selectedUri != null,
                                 modifier = Modifier.fillMaxWidth().height(64.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = OlivePrimary),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = OlivePrimary,
+                                    disabledContainerColor = OlivePrimary.copy(alpha = 0.3f),
+                                    disabledContentColor = Color.White.copy(alpha = 0.5f)
+                                ),
                                 shape = RoundedCornerShape(20.dp)
                             ) {
-                                @Suppress("DEPRECATION")
-                                Icon(Icons.Default.Send, contentDescription = null, tint = Color.White)
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = if (selectedUri != null) Color.White else Color.White.copy(alpha=0.5f))
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text("Send File", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             }
@@ -382,54 +392,116 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
 
                 AppScreen.ReceiveFlow -> {
                     Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 24.dp)) {
-                            IconButton(onClick = { goHome() }) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = OliveText) }
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 16.dp)) {
+                            IconButton(onClick = { goHome() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = OliveText) }
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Receive File", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
                         }
 
-                        if (state is TransferState.ReceivedPendingSave) {
-                            val s = state as TransferState.ReceivedPendingSave
-                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(56.dp))
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (state is TransferState.ReceivedPendingSave) {
+                                val s = state as TransferState.ReceivedPendingSave
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(56.dp))
+                                    }
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    Text("File Received", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = OliveText)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(s.originalName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium, color = OliveText, textAlign = TextAlign.Center)
+                                    Text("${s.fileSize / 1024 / 1024} MB", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f))
                                 }
-                                Spacer(modifier = Modifier.height(32.dp))
-                                Text("File Received", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = OliveText)
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text(s.originalName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium, color = OliveText, textAlign = TextAlign.Center)
-                                Text("${s.fileSize / 1024} KB", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f))
+                            } else if (state is TransferState.RequestPending) {
+                                val s = state as TransferState.RequestPending
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Info, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(56.dp))
+                                    }
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    Text("Incoming File", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = OliveText)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text("A device wants to send you a file.", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f), textAlign = TextAlign.Center)
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                    
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                                        shape = RoundedCornerShape(16.dp),
+                                        elevation = CardDefaults.cardElevation(2.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(s.metadata.fileName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = OliveText, textAlign = TextAlign.Center)
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text("${s.metadata.fileSize / (1024 * 1024)} MB", style = MaterialTheme.typography.bodyMedium, color = OliveText.copy(alpha=0.6f))
+                                        }
+                                    }
+                                }
+                            } else if (state is TransferState.Transferring) {
+                                val s = state as TransferState.Transferring
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = OlivePrimary, modifier = Modifier.size(48.dp))
+                                    }
+                                    Spacer(modifier = Modifier.height(32.dp))
+                                    Text("Receiving File", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                    LinearProgressIndicator(progress = { s.progress }, modifier = Modifier.fillMaxWidth(0.8f).height(12.dp).clip(RoundedCornerShape(6.dp)), color = OlivePrimary)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text("${(s.progress * 100).toInt()}%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = OliveText)
+                                    Text("${s.bytesSent / 1024 / 1024} MB / ${s.totalBytes / 1024 / 1024} MB", color = OliveText.copy(alpha=0.6f))
+                                }
+                            } else {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    val qrBitmap = viewModel.receiverQrBitmap.collectAsState().value
+                                    if (qrBitmap != null) {
+                                        Card(
+                                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                                            shape = RoundedCornerShape(32.dp),
+                                            elevation = CardDefaults.cardElevation(4.dp)
+                                        ) {
+                                            Column(modifier = Modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Image(bitmap = qrBitmap.asImageBitmap(), contentDescription = "QR Code", modifier = Modifier.size(220.dp))
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(32.dp))
+                                        Text("Ready to receive", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text("Scan this code from another device\nor select from Nearby Devices", style = MaterialTheme.typography.bodyLarge, color = OliveText.copy(alpha=0.6f), textAlign = TextAlign.Center)
+                                    } else {
+                                        CircularProgressIndicator(color = OlivePrimary)
+                                        Spacer(modifier = Modifier.height(24.dp))
+                                        Text("Starting receiver...", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f))
+                                    }
+                                }
                             }
-                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        }
+
+                        if (state is TransferState.RequestPending) {
+                            val s = state as TransferState.RequestPending
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                OutlinedButton(onClick = { 
+                                    Thread { s.decision.decline() }.start() 
+                                }, modifier = Modifier.weight(1f).height(64.dp), shape = RoundedCornerShape(20.dp)) {
+                                    Text("Decline", style = MaterialTheme.typography.titleMedium, color = OliveText)
+                                }
+                                Button(onClick = { 
+                                    Thread { s.decision.accept() }.start()
+                                }, modifier = Modifier.weight(1f).height(64.dp), colors = ButtonDefaults.buttonColors(containerColor = OlivePrimary), shape = RoundedCornerShape(20.dp)) {
+                                    Text("Accept", style = MaterialTheme.typography.titleMedium)
+                                }
+                            }
+                        } else if (state is TransferState.ReceivedPendingSave) {
+                            val s = state as TransferState.ReceivedPendingSave
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                 OutlinedButton(onClick = { viewModel.discardReceivedFile(s); goHome() }, modifier = Modifier.weight(1f).height(64.dp), shape = RoundedCornerShape(20.dp)) {
                                     Text("Discard", style = MaterialTheme.typography.titleMedium, color = OliveText)
                                 }
                                 Button(onClick = { saveFileLauncher.launch(s.originalName) }, modifier = Modifier.weight(1f).height(64.dp), colors = ButtonDefaults.buttonColors(containerColor = OlivePrimary), shape = RoundedCornerShape(20.dp)) {
                                     Text("Save File", style = MaterialTheme.typography.titleMedium)
-                                }
-                            }
-                        } else {
-                            // Waiting / Connecting
-                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                                val qrBitmap = viewModel.receiverQrBitmap.collectAsState().value
-                                if (qrBitmap != null) {
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                                        shape = RoundedCornerShape(32.dp),
-                                        elevation = CardDefaults.cardElevation(4.dp)
-                                    ) {
-                                        Column(modifier = Modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Image(bitmap = qrBitmap.asImageBitmap(), contentDescription = "QR Code", modifier = Modifier.size(220.dp))
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(32.dp))
-                                    Text("Ready to receive", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = OliveText)
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text("Scan this code from another device\\nor select from Nearby Devices", style = MaterialTheme.typography.bodyLarge, color = OliveText.copy(alpha=0.6f), textAlign = TextAlign.Center)
-                                } else {
-                                    CircularProgressIndicator(color = OlivePrimary)
-                                    Spacer(modifier = Modifier.height(24.dp))
-                                    Text("Starting receiver...", style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f))
                                 }
                             }
                         }
@@ -438,7 +510,6 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
             }
         }
 
-        // Global Overlays for Success/Error
         Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.BottomCenter) {
             AnimatedVisibility(visible = state is TransferState.Success) {
                 val msg = (state as? TransferState.Success)?.message ?: "File transferred successfully"

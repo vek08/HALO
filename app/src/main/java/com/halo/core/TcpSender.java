@@ -39,24 +39,35 @@ public class TcpSender {
         }
     }
 
-    // New adapted method supporting Android SAF InputStreams
+    // Adapted method supporting Android SAF InputStreams and Handshake
     public void sendStream(InputStream is, long fileSize, String fileName, String mimeType) throws IOException {
         System.out.println("Connecting to " + serverIp + ":" + port + "...");
         
         try (Socket socket = new Socket(serverIp, port);
-             DataOutputStream dataOut = new DataOutputStream(socket.getOutputStream())) {
+             DataOutputStream dataOut = new DataOutputStream(socket.getOutputStream());
+             DataInputStream dataIn = new DataInputStream(socket.getInputStream())) {
 
-            // 1. Send Metadata
+            // 1. Send Metadata (Transfer Request)
             FileMetadata metadata = new FileMetadata(fileName, fileSize, mimeType);
             metadata.writeTo(dataOut);
-            System.out.println("Sent metadata for: " + fileName);
+            dataOut.flush();
+            System.out.println("Sent metadata for: " + fileName + ". Waiting for receiver to accept...");
 
-            // 2. Send File Content
+            // 2. Read Response (Handshake)
+            String response = dataIn.readUTF();
+            if ("DECLINE".equals(response)) {
+                throw new IOException("Transfer declined by the receiver.");
+            } else if (!"ACCEPT".equals(response)) {
+                throw new IOException("Unknown response from receiver: " + response);
+            }
+
+            System.out.println("Receiver accepted. Sending file bytes...");
+
+            // 3. Send File Content
             byte[] buffer = new byte[8192];
             int bytesRead;
             long totalSent = 0;
 
-            System.out.println("Sending file bytes...");
             while ((bytesRead = is.read(buffer)) != -1) {
                 dataOut.write(buffer, 0, bytesRead);
                 totalSent += bytesRead;
