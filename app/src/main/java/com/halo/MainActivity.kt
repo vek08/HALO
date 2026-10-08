@@ -8,6 +8,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.graphics.asImageBitmap
@@ -47,13 +49,10 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
     val appContext = context.applicationContext 
     
     val state by viewModel.transferState.collectAsState()
-    val localIp by viewModel.localIp.collectAsState()
     val discoveredDevices by viewModel.discoveredDevices.collectAsState()
     val isDiscovering by viewModel.isDiscovering.collectAsState()
     val selectedDevice by viewModel.selectedDevice.collectAsState()
 
-    var receiverIp by remember { mutableStateOf("") }
-    var receiverPort by remember { mutableStateOf(8080) }
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -86,8 +85,15 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
         viewModel.refreshLocalIp()
     }
 
+    LaunchedEffect(state) {
+        if (state is TransferState.Success || state is TransferState.Error) {
+            kotlinx.coroutines.delay(3000)
+            viewModel.resetState()
+        }
+    }
+
     Column(
-        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+        modifier = Modifier.padding(16.dp).fillMaxWidth().verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("HALO Direct Transfer", style = MaterialTheme.typography.headlineMedium)
@@ -95,23 +101,9 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
 
         // State indicator
         when (val s = state) {
-            is TransferState.Idle -> Text("Idle", color = MaterialTheme.colorScheme.onSurfaceVariant)
             is TransferState.Connecting -> {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (viewModel.receiverQrBitmap.collectAsState().value == null) {
                     Text("Connecting...", color = MaterialTheme.colorScheme.primary)
-                    viewModel.receiverQrBitmap.collectAsState().value?.let { bmp ->
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Image(
-                            bitmap = bmp.asImageBitmap(),
-                            contentDescription = "Receiver QR Code",
-                            modifier = Modifier.size(200.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Scan this code from another HALO device",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
                 }
             }
             is TransferState.Transferring -> {
@@ -143,7 +135,6 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                         Spacer(modifier = Modifier.height(16.dp))
                         Row {
                             Button(onClick = { 
-                                Log.d("HALO_UI", "Launching SAF picker with name: ${s.originalName}")
                                 saveFileLauncher.launch(s.originalName)
                             }) {
                                 Text("Save to device")
@@ -162,168 +153,181 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
             is TransferState.Error -> {
                 Text("Error: ${s.exception}", color = MaterialTheme.colorScheme.error)
             }
+            else -> {}
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (state is TransferState.Idle || state is TransferState.Success || state is TransferState.Error) {
-            
-            // NEARBY DEVICES (DISCOVERY)
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Nearby Devices", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                        Button(onClick = { 
-                            if (isDiscovering) {
-                                viewModel.stopDiscovery()
-                            } else {
-                                viewModel.startDiscovery(appContext)
-                                receiverIp = ""
-                                receiverPort = 8080
-                            }
-                        }) {
-                            Text(
-                                if (isDiscovering) "Stop"
-                                else if (selectedDevice != null) "Discover Again"
-                                else "Discover"
-                            )
-                        }
-                    }
-                    if (isDiscovering) {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-                        Text("Scanning...", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    if (selectedDevice != null) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text("Selected: ${selectedDevice!!.name}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                Text("${selectedDevice!!.host.hostAddress}:${selectedDevice!!.port}", style = MaterialTheme.typography.bodySmall)
+        val hideControls = state is TransferState.Transferring || state is TransferState.Saving || state is TransferState.ReceivedPendingSave
+        val qrBitmap = viewModel.receiverQrBitmap.collectAsState().value
+        val isReceiver = qrBitmap != null || (state is TransferState.Connecting && selectedDevice == null)
+
+        if (!hideControls) {
+            if (!isReceiver) {
+                if (selectedDevice != null) {
+                    // SELECTED DEVICE UI
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Connected to", style = MaterialTheme.typography.labelMedium)
+                            Text("📱 ${selectedDevice!!.name}", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text("Ready to receive", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(onClick = { viewModel.resetState() }) {
+                                Text("Change Device")
                             }
                         }
-                    } else if (discoveredDevices.isEmpty() && !isDiscovering) {
-                        Text("No devices found", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        discoveredDevices.forEach { device ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        receiverIp = device.host.hostAddress ?: ""
-                                        receiverPort = device.port
-                                        viewModel.selectDevice(device)
+                    }
+                } else {
+                    // NEARBY DEVICES (DISCOVERY)
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Nearby Devices", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                                Button(onClick = { 
+                                    if (isDiscovering) {
+                                        viewModel.stopDiscovery()
+                                    } else {
+                                        viewModel.startDiscovery(appContext)
                                     }
-                                    .padding(vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(device.name, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                    Text("${device.host.hostAddress}:${device.port}", style = MaterialTheme.typography.bodySmall)
+                                }) {
+                                    Text(if (isDiscovering) "Stop" else "Discover")
+                                }
+                            }
+                            if (isDiscovering) {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                                Text("Discovering nearby devices...", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            if (discoveredDevices.isEmpty() && !isDiscovering) {
+                                Text("No device selected", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } else {
+                                if (discoveredDevices.isNotEmpty()) {
+                                    Text("${discoveredDevices.size} device(s) found", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                }
+                                discoveredDevices.forEach { device ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { viewModel.selectDevice(device) }
+                                            .padding(vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("📱 ${device.name}", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                            Text("Ready to connect", style = MaterialTheme.typography.bodySmall)
+                                        }
+                                        Button(onClick = { viewModel.selectDevice(device) }) {
+                                            Text("Select")
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-            // QR PAIRING SENDER
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Pair with QR", style = MaterialTheme.typography.titleMedium)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = {
-                        val options = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
-                            .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
-                            .build()
-                        val scanner = com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(context, options)
-                        scanner.startScan()
-                            .addOnSuccessListener { barcode ->
-                                barcode.rawValue?.let { rawValue ->
-                                    val data = com.halo.network.QrPairingData.fromJsonString(rawValue)
-                                    if (data != null) {
-                                        receiverIp = data.ip
-                                        receiverPort = data.port
-                                        android.widget.Toast.makeText(context, "Scanned: ${data.deviceName}", android.widget.Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        android.widget.Toast.makeText(context, "Invalid HALO QR format", android.widget.Toast.LENGTH_LONG).show()
+                    // QR PAIRING SENDER
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Pair with QR", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(onClick = {
+                                val options = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
+                                    .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
+                                    .build()
+                                val scanner = com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(context, options)
+                                scanner.startScan()
+                                    .addOnSuccessListener { barcode ->
+                                        barcode.rawValue?.let { rawValue ->
+                                            val data = com.halo.network.QrPairingData.fromJsonString(rawValue)
+                                            if (data != null) {
+                                                viewModel.selectDeviceFromQr(data)
+                                                android.widget.Toast.makeText(context, "Scanned: ${data.deviceName}", android.widget.Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                android.widget.Toast.makeText(context, "Invalid HALO QR format", android.widget.Toast.LENGTH_LONG).show()
+                                            }
+                                        } ?: android.widget.Toast.makeText(context, "Empty QR code", android.widget.Toast.LENGTH_SHORT).show()
                                     }
-                                } ?: android.widget.Toast.makeText(context, "Empty QR code", android.widget.Toast.LENGTH_SHORT).show()
+                                    .addOnFailureListener { e ->
+                                        android.widget.Toast.makeText(context, "Scan failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                            }) {
+                                Text("Scan QR")
                             }
-                            .addOnFailureListener { e ->
-                                android.widget.Toast.makeText(context, "Scan failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                    }) {
-                        Text("Scan QR")
+                        }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            // SENDER CONTROLS
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Send File", style = MaterialTheme.typography.titleMedium)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
-                        Text(if (selectedUri != null) "File Selected" else "Pick File")
-                    }
-                    OutlinedTextField(
-                        value = receiverIp,
-                        onValueChange = { receiverIp = it },
-                        label = { Text("Receiver IP") },
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    )
-                    OutlinedTextField(
-                        value = receiverPort.toString(),
-                        onValueChange = { receiverPort = it.toIntOrNull() ?: 8080 },
-                        label = { Text("Receiver Port") },
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    )
-                    Button(
-                        onClick = {
-                            selectedUri?.let { viewModel.sendFile(appContext, it, receiverIp, receiverPort) }
-                        },
-                        enabled = selectedUri != null && receiverIp.isNotBlank(),
-                        modifier = Modifier.padding(top = 8.dp)
-                    ) {
-                        Text("Send")
+                // SENDER CONTROLS
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Send File", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
+                            Text(if (selectedUri != null) "File Selected" else "Pick File")
+                        }
+                        Button(
+                            onClick = {
+                                selectedUri?.let { viewModel.sendFile(appContext, it) }
+                            },
+                            enabled = selectedUri != null && selectedDevice != null,
+                            modifier = Modifier.padding(top = 8.dp)
+                        ) {
+                            Text("Send File")
+                        }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             // RECEIVER CONTROLS
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Receive File", style = MaterialTheme.typography.titleMedium)
-                    Text("My IP: $localIp", style = MaterialTheme.typography.bodyMedium)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = { viewModel.startListening(appContext, 8080) }) {
-                        Text("Start Listening")
+            if (state is TransferState.Connecting && isReceiver) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Receive File", style = MaterialTheme.typography.titleMedium, modifier = Modifier.align(Alignment.Start))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Ready to receive", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                        qrBitmap?.let { bmp ->
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Image(
+                                bitmap = bmp.asImageBitmap(),
+                                contentDescription = "Receiver QR Code",
+                                modifier = Modifier.size(200.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "Scan this code from another HALO device",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = { viewModel.cancelTransfer() }) {
+                            Text("Stop Listening")
+                        }
+                    }
+                }
+            } else if (state is TransferState.Idle || state is TransferState.Success || state is TransferState.Error) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Receive File", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = { viewModel.startListening(appContext, 8080) }) {
+                            Text("Start Listening")
+                        }
                     }
                 }
             }
-        } else if (state !is TransferState.ReceivedPendingSave && state !is TransferState.Saving) {
+        }
+
+        if ((state is TransferState.Connecting && !isReceiver) || state is TransferState.Transferring || state is TransferState.Saving) {
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = { viewModel.cancelTransfer() }) {
                 Text("Cancel Transfer")
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        if (state !is TransferState.Idle && state !is TransferState.ReceivedPendingSave && state !is TransferState.Saving) {
-            TextButton(onClick = { viewModel.resetState() }) {
-                Text("Reset")
             }
         }
     }

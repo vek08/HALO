@@ -144,9 +144,35 @@ class TransferViewModel : ViewModel() {
         }
     }
 
-    fun sendFile(context: Context, uri: Uri, ip: String, port: Int) {
+    fun selectDeviceFromQr(qrData: QrPairingData) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val inetAddress = java.net.InetAddress.getByName(qrData.ip)
+                val device = DiscoveredDevice(
+                    name = qrData.deviceName,
+                    host = inetAddress,
+                    port = qrData.port
+                )
+                _selectedDevice.value = device
+                stopDiscovery()
+            } catch (e: Exception) {
+                Log.e("HALO_VM", "Invalid IP in QR: ${qrData.ip}", e)
+            }
+        }
+    }
+
+    fun sendFile(context: Context, uri: Uri) {
         if (_transferState.value is TransferState.Connecting || _transferState.value is TransferState.Transferring) return
         
+        val target = _selectedDevice.value
+        if (target == null) {
+            _transferState.value = TransferState.Error("No device selected")
+            return
+        }
+
+        val ip = target.host.hostAddress ?: return
+        val port = target.port
+
         Log.d("HALO_VM", "sendFile called to $ip:$port")
         _transferState.value = TransferState.Connecting
         transferJob = viewModelScope.launch(Dispatchers.IO) {
@@ -170,7 +196,7 @@ class TransferViewModel : ViewModel() {
                 _transferState.value = TransferState.Success("Transfer Complete")
             } catch (e: Exception) {
                 Log.e("HALO_VM", "Send Error", e)
-                _transferState.value = TransferState.Error(e.message ?: "Unknown error")
+                _transferState.value = TransferState.Error("Could not connect to device: ${e.message}")
             }
         }
     }
@@ -224,6 +250,7 @@ class TransferViewModel : ViewModel() {
             currentState.tempFile.delete()
         }
         _receiverQrBitmap.value = null
+        _selectedDevice.value = null
         _transferState.value = TransferState.Idle
     }
 
@@ -238,6 +265,7 @@ class TransferViewModel : ViewModel() {
             currentState.tempFile.delete()
         }
         _receiverQrBitmap.value = null
+        _selectedDevice.value = null
         _transferState.value = TransferState.Idle
     }
 
