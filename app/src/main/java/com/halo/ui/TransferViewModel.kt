@@ -20,6 +20,9 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import android.graphics.Bitmap
+import com.halo.network.QrPairingData
+import com.halo.network.QrGenerator
 
 class TransferViewModel : ViewModel() {
 
@@ -41,6 +44,9 @@ class TransferViewModel : ViewModel() {
 
     private val _selectedDevice = MutableStateFlow<DiscoveredDevice?>(null)
     val selectedDevice: StateFlow<DiscoveredDevice?> = _selectedDevice
+
+    private val _receiverQrBitmap = MutableStateFlow<Bitmap?>(null)
+    val receiverQrBitmap: StateFlow<Bitmap?> = _receiverQrBitmap
 
     init {
         Log.d("HALO_VM", "TransferViewModel initialized")
@@ -94,6 +100,14 @@ class TransferViewModel : ViewModel() {
                     override fun onServerStarted(actualPort: Int) {
                         Log.d("HALO_VM", "Server started on ephemeral port: $actualPort")
                         getNsdManager(context).registerService(actualPort)
+                        
+                        val qrData = QrPairingData(
+                            version = 1,
+                            deviceName = "HALO_${android.os.Build.MODEL}",
+                            ip = _localIp.value,
+                            port = actualPort
+                        )
+                        _receiverQrBitmap.value = QrGenerator.generateQrBitmap(qrData.toJsonString())
                     }
 
                     override fun onProgress(bytesReceived: Long, totalBytes: Long) {
@@ -209,6 +223,7 @@ class TransferViewModel : ViewModel() {
         if (currentState is TransferState.ReceivedPendingSave) {
             currentState.tempFile.delete()
         }
+        _receiverQrBitmap.value = null
         _transferState.value = TransferState.Idle
     }
 
@@ -222,6 +237,7 @@ class TransferViewModel : ViewModel() {
         if (currentState is TransferState.ReceivedPendingSave) {
             currentState.tempFile.delete()
         }
+        _receiverQrBitmap.value = null
         _transferState.value = TransferState.Idle
     }
 

@@ -40,4 +40,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    
+    // QR Code Generation & Scanning
+    implementation("com.google.zxing:core:3.5.2")
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 }

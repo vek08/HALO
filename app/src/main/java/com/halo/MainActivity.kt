@@ -8,7 +8,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -94,7 +96,24 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
         // State indicator
         when (val s = state) {
             is TransferState.Idle -> Text("Idle", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            is TransferState.Connecting -> Text("Connecting...", color = MaterialTheme.colorScheme.primary)
+            is TransferState.Connecting -> {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Connecting...", color = MaterialTheme.colorScheme.primary)
+                    viewModel.receiverQrBitmap.collectAsState().value?.let { bmp ->
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = "Receiver QR Code",
+                            modifier = Modifier.size(200.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Scan this code from another HALO device",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
             is TransferState.Transferring -> {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Transferring: ${(s.progress * 100).toInt()}%", color = MaterialTheme.colorScheme.primary)
@@ -209,6 +228,40 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // QR PAIRING SENDER
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Pair with QR", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = {
+                        val options = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
+                            .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
+                            .build()
+                        val scanner = com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(context, options)
+                        scanner.startScan()
+                            .addOnSuccessListener { barcode ->
+                                barcode.rawValue?.let { rawValue ->
+                                    val data = com.halo.network.QrPairingData.fromJsonString(rawValue)
+                                    if (data != null) {
+                                        receiverIp = data.ip
+                                        receiverPort = data.port
+                                        android.widget.Toast.makeText(context, "Scanned: ${data.deviceName}", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        android.widget.Toast.makeText(context, "Invalid HALO QR format", android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                } ?: android.widget.Toast.makeText(context, "Empty QR code", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                            .addOnFailureListener { e ->
+                                android.widget.Toast.makeText(context, "Scan failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                    }) {
+                        Text("Scan QR")
                     }
                 }
             }
