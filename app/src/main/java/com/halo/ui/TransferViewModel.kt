@@ -9,6 +9,8 @@ import com.halo.core.FileMetadata
 import com.halo.core.TcpReceiver
 import com.halo.core.TcpSender
 import com.halo.network.NetworkUtils
+import com.halo.network.NsdDiscoveryManager
+import com.halo.network.DiscoveredDevice
 import com.halo.network.UriUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,12 +32,37 @@ class TransferViewModel : ViewModel() {
     private var currentReceiver: TcpReceiver? = null
     private var transferJob: Job? = null
 
+    private var nsdManager: NsdDiscoveryManager? = null
+    private val _discoveredDevices = MutableStateFlow<List<DiscoveredDevice>>(emptyList())
+    val discoveredDevices: StateFlow<List<DiscoveredDevice>> = _discoveredDevices
+
     init {
         Log.d("HALO_VM", "TransferViewModel initialized")
     }
 
+    private fun getNsdManager(context: Context): NsdDiscoveryManager {
+        if (nsdManager == null) {
+            val appCtx = context.applicationContext
+            nsdManager = NsdDiscoveryManager(appCtx)
+            viewModelScope.launch {
+                nsdManager?.discoveredDevices?.collect { devices ->
+                    _discoveredDevices.value = devices
+                }
+            }
+        }
+        return nsdManager!!
+    }
+
     fun refreshLocalIp() {
         _localIp.value = NetworkUtils.getLocalIpAddress()
+    }
+
+    fun startDiscovery(context: Context) {
+        getNsdManager(context).startDiscovery()
+    }
+
+    fun stopDiscovery() {
+        nsdManager?.stopDiscovery()
     }
 
     fun startListening(context: Context, port: Int) {
@@ -47,8 +74,14 @@ class TransferViewModel : ViewModel() {
             try {
                 // Save to app's cache directory temporarily
                 val outputDir = context.cacheDir
-                currentReceiver = TcpReceiver(port, outputDir)
+                // Using port 0 allows the OS to pick an ephemeral port, preventing binding errors.
+                currentReceiver = TcpReceiver(0, outputDir)
                 currentReceiver?.setListener(object : TcpReceiver.ReceiverListener {
+                    override fun onServerStarted(actualPort: Int) {
+                        Log.d("HALO_VM", "Server started on ephemeral port: $actualPort")
+                        getNsdManager(context).registerService(actualPort)
+                    }
+
                     override fun onProgress(bytesReceived: Long, totalBytes: Long) {
                         val progress = if (totalBytes > 0) bytesReceived.toFloat() / totalBytes else 0f
                         _transferState.value = TransferState.Transferring(progress, bytesReceived, totalBytes)
@@ -56,6 +89,7 @@ class TransferViewModel : ViewModel() {
 
                     override fun onComplete(savedFile: File, metadata: FileMetadata) {
                         Log.d("HALO_VM", "Transfer complete. Pending save for: ${metadata.fileName}")
+                        getNsdManager(context).unregisterService() // Stop advertising once we get a file
                         _transferState.value = TransferState.ReceivedPendingSave(
                             tempFile = savedFile,
                             originalName = metadata.fileName,
@@ -67,6 +101,7 @@ class TransferViewModel : ViewModel() {
 
                     override fun onError(e: Exception) {
                         Log.e("HALO_VM", "Receiver Error", e)
+                        getNsdManager(context).unregisterService()
                         if (e.message != "Socket closed") {
                             _transferState.value = TransferState.Error(e.message ?: "Unknown error")
                         }
@@ -75,6 +110,7 @@ class TransferViewModel : ViewModel() {
                 currentReceiver?.startListening()
             } catch (e: Exception) {
                 Log.e("HALO_VM", "startListening Exception", e)
+                getNsdManager(context).unregisterService()
                 _transferState.value = TransferState.Error(e.message ?: "Unknown error")
             }
         }
@@ -166,11 +202,18 @@ class TransferViewModel : ViewModel() {
         Log.d("HALO_VM", "Cancelling transfer...")
         currentReceiver?.stopListening()
         currentReceiver = null
+        nsdManager?.unregisterService()
         transferJob?.cancel()
         val currentState = _transferState.value
         if (currentState is TransferState.ReceivedPendingSave) {
             currentState.tempFile.delete()
         }
         _transferState.value = TransferState.Idle
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        nsdManager?.unregisterService()
+        nsdManager?.stopDiscovery()
     }
 }

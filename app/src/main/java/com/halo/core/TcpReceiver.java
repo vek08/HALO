@@ -10,6 +10,7 @@ public class TcpReceiver {
     private volatile ServerSocket currentServerSocket;
 
     public interface ReceiverListener {
+        void onServerStarted(int port);
         void onProgress(long bytesReceived, long totalBytes);
         void onComplete(File savedFile, FileMetadata metadata);
         void onError(Exception e);
@@ -48,6 +49,9 @@ public class TcpReceiver {
         System.out.println("Receiver started. Listening on port " + port);
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             this.currentServerSocket = serverSocket;
+            if (listener != null) {
+                listener.onServerStarted(serverSocket.getLocalPort());
+            }
             while (!serverSocket.isClosed()) {
                 try {
                     Socket clientSocket = serverSocket.accept();

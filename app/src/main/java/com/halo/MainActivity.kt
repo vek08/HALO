@@ -7,12 +7,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.halo.ui.TransferState
@@ -40,15 +42,16 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun TransferApp(viewModel: TransferViewModel = viewModel()) {
     val context = LocalContext.current
-    val appContext = context.applicationContext // Use application context to prevent leak/crash if Activity is recreated
+    val appContext = context.applicationContext 
     
     val state by viewModel.transferState.collectAsState()
     val localIp by viewModel.localIp.collectAsState()
+    val discoveredDevices by viewModel.discoveredDevices.collectAsState()
 
     var receiverIp by remember { mutableStateOf("") }
+    var receiverPort by remember { mutableStateOf(8080) }
+    var isDiscovering by remember { mutableStateOf(false) }
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
-    
-    val port = 8080
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -58,12 +61,10 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
         }
     )
 
-    // Launcher for saving the received file
     val saveFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("*/*")
     ) { uri ->
         Log.d("HALO_SAF", "CreateDocument result: $uri")
-        // Read directly from ViewModel to avoid stale Compose closures
         val currentState = viewModel.transferState.value
         
         if (uri != null) {
@@ -87,7 +88,7 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("HALO Direct Transfer", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         // State indicator
         when (val s = state) {
@@ -96,7 +97,7 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
             is TransferState.Transferring -> {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Transferring: ${(s.progress * 100).toInt()}%", color = MaterialTheme.colorScheme.primary)
-                    LinearProgressIndicator(progress = s.progress, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                    LinearProgressIndicator(progress = { s.progress }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
                     Text("${s.bytesSent} / ${s.totalBytes} bytes", style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -143,9 +144,57 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         if (state is TransferState.Idle || state is TransferState.Success || state is TransferState.Error) {
+            
+            // NEARBY DEVICES (DISCOVERY)
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Nearby Devices", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Button(onClick = { 
+                            if (isDiscovering) {
+                                viewModel.stopDiscovery()
+                                isDiscovering = false
+                            } else {
+                                viewModel.startDiscovery(appContext)
+                                isDiscovering = true
+                            }
+                        }) {
+                            Text(if (isDiscovering) "Stop" else "Discover")
+                        }
+                    }
+                    if (isDiscovering) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (discoveredDevices.isEmpty()) {
+                        Text("No devices found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        discoveredDevices.forEach { device ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        receiverIp = device.host.hostAddress ?: ""
+                                        receiverPort = device.port
+                                    }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(device.name, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    Text("${device.host.hostAddress}:${device.port}", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // SENDER CONTROLS
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -160,9 +209,15 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                         label = { Text("Receiver IP") },
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                     )
+                    OutlinedTextField(
+                        value = receiverPort.toString(),
+                        onValueChange = { receiverPort = it.toIntOrNull() ?: 8080 },
+                        label = { Text("Receiver Port") },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
                     Button(
                         onClick = {
-                            selectedUri?.let { viewModel.sendFile(appContext, it, receiverIp, port) }
+                            selectedUri?.let { viewModel.sendFile(appContext, it, receiverIp, receiverPort) }
                         },
                         enabled = selectedUri != null && receiverIp.isNotBlank(),
                         modifier = Modifier.padding(top = 8.dp)
@@ -180,13 +235,12 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                     Text("Receive File", style = MaterialTheme.typography.titleMedium)
                     Text("My IP: $localIp", style = MaterialTheme.typography.bodyMedium)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = { viewModel.startListening(appContext, port) }) {
+                    Button(onClick = { viewModel.startListening(appContext, 8080) }) {
                         Text("Start Listening")
                     }
                 }
             }
         } else if (state !is TransferState.ReceivedPendingSave && state !is TransferState.Saving) {
-            // Cancel button during active transfer (but not while saving/pending save)
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = { viewModel.cancelTransfer() }) {
                 Text("Cancel Transfer")
