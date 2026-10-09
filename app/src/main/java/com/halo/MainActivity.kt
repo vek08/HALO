@@ -266,12 +266,13 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                                 }
                             } else if (state is TransferState.Error) {
                                 val s = state as TransferState.Error
+                                val title = if (s.userFriendlyMessage.contains("cancelled", ignoreCase = true)) "Transfer cancelled" else "Transfer failed"
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
                                         Icon(Icons.Default.Warning, contentDescription = null, tint = OliveError, modifier = Modifier.size(56.dp))
                                     }
                                     Spacer(modifier = Modifier.height(32.dp))
-                                    Text("Transfer failed", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = OliveText)
+                                    Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = OliveText)
                                     Spacer(modifier = Modifier.height(16.dp))
                                     Text(s.userFriendlyMessage, style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f), textAlign = TextAlign.Center)
                                 }
@@ -451,12 +452,13 @@ fun TransferApp(viewModel: TransferViewModel = viewModel()) {
                                 }
                             } else if (state is TransferState.Error) {
                                 val s = state as TransferState.Error
+                                val title = if (s.userFriendlyMessage.contains("cancelled", ignoreCase = true)) "Transfer cancelled" else "Transfer failed"
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Box(modifier = Modifier.size(100.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
                                         Icon(Icons.Default.Warning, contentDescription = null, tint = OliveError, modifier = Modifier.size(56.dp))
                                     }
                                     Spacer(modifier = Modifier.height(32.dp))
-                                    Text("Transfer failed", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = OliveText)
+                                    Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = OliveText)
                                     Spacer(modifier = Modifier.height(16.dp))
                                     Text(s.userFriendlyMessage, style = MaterialTheme.typography.titleMedium, color = OliveText.copy(alpha=0.6f), textAlign = TextAlign.Center)
                                 }

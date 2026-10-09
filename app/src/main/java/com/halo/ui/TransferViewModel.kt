@@ -37,6 +37,8 @@ class TransferViewModel : ViewModel() {
             combined.contains("EHOSTUNREACH") || combined.contains("No route to host") -> "Device unreachable."
             combined.contains("Socket closed") -> "Transfer cancelled."
             combined.contains("connect timed out") || combined.contains("Timeout") -> "Connection unavailable."
+            combined.contains("cancelled by receiver") -> "The receiver cancelled the transfer."
+            combined.contains("cancelled by sender") -> "The sender cancelled the transfer."
             combined.contains("Unable to read file") -> "Unable to read file."
             combined.contains("Failed to save") || combined.contains("Unable to save file") -> "Unable to save file."
             combined.contains("Connection lost") || combined.contains("incomplete") -> "Connection lost."
@@ -52,6 +54,7 @@ class TransferViewModel : ViewModel() {
     val localIp: StateFlow<String> = _localIp
 
     private var currentReceiver: TcpReceiver? = null
+    private var currentSender: TcpSender? = null
 
     private var lastRecvTime = 0L
     private var lastRecvBytes = 0L
@@ -119,8 +122,8 @@ class TransferViewModel : ViewModel() {
             try {
                 // Save to app's cache directory temporarily
                 val outputDir = context.cacheDir
-                // Using port 0 allows the OS to pick an ephemeral port, preventing binding errors.
-                currentReceiver = TcpReceiver(0, outputDir)
+                // Use the requested port (typically 8080) to prevent NSD cache staleness issues.
+                currentReceiver = TcpReceiver(port, outputDir)
                 currentReceiver?.setListener(object : TcpReceiver.ReceiverListener {
                     override fun onServerStarted(actualPort: Int) {
                         Log.d("HALO_VM", "Server started on ephemeral port: $actualPort")
@@ -175,6 +178,8 @@ class TransferViewModel : ViewModel() {
                     }
                 })
                 currentReceiver?.startListening()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("HALO_VM", "startListening Exception", e)
                 getNsdManager(context).unregisterService()
@@ -194,6 +199,8 @@ class TransferViewModel : ViewModel() {
                 )
                 _selectedDevice.value = device
                 stopDiscovery()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("HALO_VM", "Invalid IP in QR: ${qrData.ip}", e)
             }
@@ -224,6 +231,7 @@ class TransferViewModel : ViewModel() {
                 lastSendTime = System.currentTimeMillis()
                 lastSendBytes = 0L
                 val sender = TcpSender(ip, port)
+                currentSender = sender
                 sender.setProgressListener { bytesSent, totalBytes ->
                     val currentTime = System.currentTimeMillis()
                     val timeDiff = currentTime - lastSendTime
@@ -243,6 +251,8 @@ class TransferViewModel : ViewModel() {
                 
                 Log.d("HALO_VM", "Send complete")
                 _transferState.value = TransferState.Success("File sent successfully", fileName, fileSize)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("HALO_VM", "Send Error", e)
                 _transferState.value = TransferState.Error("Could not connect to device: ${e.message}")
@@ -280,6 +290,8 @@ class TransferViewModel : ViewModel() {
                 
                 _transferState.value = TransferState.Success("File received successfully", pendingState.originalName, pendingState.fileSize)
                 Log.d("HALO_VM", "State updated to Success.")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("HALO_VM", "Save Failed", e)
                 _transferState.value = TransferState.Error("Failed to save: ${e.message}")
@@ -305,6 +317,10 @@ class TransferViewModel : ViewModel() {
 
     fun cancelTransfer() {
         Log.d("HALO_VM", "Cancelling transfer...")
+        _selectedDevice.value = null
+        currentSender?.cancel()
+        currentSender = null
+        currentReceiver?.cancelActiveTransfer()
         currentReceiver?.stopListening()
         currentReceiver = null
         nsdManager?.unregisterService()

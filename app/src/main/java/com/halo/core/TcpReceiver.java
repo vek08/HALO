@@ -8,6 +8,7 @@ public class TcpReceiver {
     private final int port;
     private final File outputDirectory;
     private volatile ServerSocket currentServerSocket;
+    private volatile Socket activeClientSocket;
 
     public interface TransferDecision {
         void accept();
@@ -50,9 +51,23 @@ public class TcpReceiver {
         }
     }
 
+    public void cancelActiveTransfer() {
+        if (activeClientSocket != null && !activeClientSocket.isClosed()) {
+            try {
+                new DataOutputStream(activeClientSocket.getOutputStream()).writeUTF("CANCEL");
+                activeClientSocket.getOutputStream().flush();
+            } catch (Exception ignored) {}
+            try {
+                activeClientSocket.close();
+            } catch (Exception ignored) {}
+        }
+    }
+
     public void startListening() {
         System.out.println("Receiver started. Listening on port " + port);
-        try (ServerSocket serverSocket = new ServerSocket(port)) {
+        try (ServerSocket serverSocket = new ServerSocket()) {
+            serverSocket.setReuseAddress(true);
+            serverSocket.bind(new java.net.InetSocketAddress(port));
             this.currentServerSocket = serverSocket;
             if (listener != null) {
                 listener.onServerStarted(serverSocket.getLocalPort());
@@ -77,7 +92,21 @@ public class TcpReceiver {
         }
     }
 
+    private void checkSenderCancellation(DataInputStream dataIn) throws IOException {
+        try {
+            if (dataIn.available() > 0) {
+                String msg = dataIn.readUTF();
+                if ("CANCEL".equals(msg)) {
+                    throw new IOException("Transfer cancelled by sender.");
+                }
+            }
+        } catch (IOException e) {
+            if ("Transfer cancelled by sender.".equals(e.getMessage())) throw e;
+        } catch (Exception ignored) {}
+    }
+
     private void handleClient(Socket socket) {
+        activeClientSocket = socket;
         File outputFile = null;
         FileMetadata metadata = null;
         boolean isComplete = false;
@@ -134,7 +163,7 @@ public class TcpReceiver {
             }
 
             String safeFileName = new File(metadata.fileName).getName();
-            safeFileName = safeFileName.replaceAll("[\\\\/:*?\"<>|]", "_");
+            safeFileName = safeFileName.replaceAll("[\\/:*?\"<>|]", "_");
             
             outputFile = new File(outputDirectory, "received_" + safeFileName);
             long totalBytesRead = 0;
@@ -153,13 +182,17 @@ public class TcpReceiver {
                     }
                 }
             } catch (Exception e) {
+                checkSenderCancellation(dataIn);
                 throw new IOException("Unable to save file: " + e.getMessage(), e);
             }
 
             if (totalBytesRead == metadata.fileSize) {
                 isComplete = true;
+                dataOut.writeUTF("TRANSFER_COMPLETE");
+                dataOut.flush();
                 if (listener != null) listener.onComplete(outputFile, metadata);
             } else {
+                checkSenderCancellation(dataIn);
                 throw new IOException("Connection lost. Expected " + metadata.fileSize + " bytes, got " + totalBytesRead);
             }
         } catch (Exception e) {
@@ -172,6 +205,7 @@ public class TcpReceiver {
             try {
                 socket.close();
             } catch (IOException ignored) {}
+            activeClientSocket = null;
         }
     }
 }
