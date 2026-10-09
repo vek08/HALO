@@ -28,12 +28,18 @@ class TransferViewModel : ViewModel() {
 
     private fun getUserFriendlyErrorMessage(e: Exception): String {
         val msg = e.message ?: ""
+        val cause = e.cause?.message ?: ""
+        val combined = msg + cause
         return when {
-            msg.contains("ECONNRESET") || msg.contains("Connection reset") -> "Connection lost."
-            msg.contains("Connection refused") -> "Receiver refused connection."
-            msg.contains("Transfer declined") -> "Transfer declined by receiver."
-            msg.contains("EHOSTUNREACH") -> "Device unreachable."
-            msg.contains("Socket closed") -> "Transfer cancelled."
+            combined.contains("ECONNRESET") || combined.contains("Connection reset") || combined.contains("Broken pipe") || combined.contains("Software caused connection abort") || combined.contains("unexpected end of stream") -> "Connection lost."
+            combined.contains("Connection refused") -> "Receiver refused connection."
+            combined.contains("Transfer declined") -> "Transfer declined by receiver."
+            combined.contains("EHOSTUNREACH") || combined.contains("No route to host") -> "Device unreachable."
+            combined.contains("Socket closed") -> "Transfer cancelled."
+            combined.contains("connect timed out") || combined.contains("Timeout") -> "Connection unavailable."
+            combined.contains("Unable to read file") -> "Unable to read file."
+            combined.contains("Failed to save") || combined.contains("Unable to save file") -> "Unable to save file."
+            combined.contains("Connection lost") || combined.contains("incomplete") -> "Connection lost."
             else -> "An unexpected network error occurred."
         }
     }

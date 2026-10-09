@@ -32,7 +32,6 @@ public class TcpReceiver {
         }
     }
     
-    // For backwards compatibility
     public TcpReceiver(int port, String outputDir) {
         this(port, new File(outputDir));
     }
@@ -63,11 +62,6 @@ public class TcpReceiver {
                     Socket clientSocket = serverSocket.accept();
                     System.out.println("Incoming connection from: " + clientSocket.getInetAddress());
                     handleClient(clientSocket);
-                    // Usually we might break here, but let's keep listening if it was declined,
-                    // or break if it was accepted and completed.
-                    // Actually, let's just break unconditionally to keep original behavior of one-shot,
-                    // OR break only if transfer completed. Wait, if declined, they might want to receive another.
-                    // But standard behavior was breaking. Let's just follow standard behavior.
                 } catch (IOException e) {
                     if (serverSocket.isClosed()) {
                         System.out.println("Server socket closed intentionally.");
@@ -84,10 +78,14 @@ public class TcpReceiver {
     }
 
     private void handleClient(Socket socket) {
+        File outputFile = null;
+        FileMetadata metadata = null;
+        boolean isComplete = false;
+
         try (DataInputStream dataIn = new DataInputStream(socket.getInputStream());
              DataOutputStream dataOut = new DataOutputStream(socket.getOutputStream())) {
             
-            FileMetadata metadata = FileMetadata.readFrom(dataIn);
+            metadata = FileMetadata.readFrom(dataIn);
 
             final Object lock = new Object();
             final boolean[] decisionMade = new boolean[1];
@@ -138,7 +136,7 @@ public class TcpReceiver {
             String safeFileName = new File(metadata.fileName).getName();
             safeFileName = safeFileName.replaceAll("[\\\\/:*?\"<>|]", "_");
             
-            File outputFile = new File(outputDirectory, "received_" + safeFileName);
+            outputFile = new File(outputDirectory, "received_" + safeFileName);
             long totalBytesRead = 0;
             byte[] buffer = new byte[8192];
 
@@ -154,17 +152,23 @@ public class TcpReceiver {
                         listener.onProgress(totalBytesRead, metadata.fileSize);
                     }
                 }
+            } catch (Exception e) {
+                throw new IOException("Unable to save file: " + e.getMessage(), e);
             }
 
             if (totalBytesRead == metadata.fileSize) {
+                isComplete = true;
                 if (listener != null) listener.onComplete(outputFile, metadata);
             } else {
-                outputFile.delete();
-                throw new IOException("Transfer incomplete! Expected " + metadata.fileSize + " bytes, got " + totalBytesRead);
+                throw new IOException("Connection lost. Expected " + metadata.fileSize + " bytes, got " + totalBytesRead);
             }
         } catch (Exception e) {
+            System.err.println("Receiver error: " + e.getMessage());
             if (listener != null) listener.onError(e);
         } finally {
+            if (!isComplete && outputFile != null && outputFile.exists()) {
+                outputFile.delete(); // Ensure partial files are deleted!
+            }
             try {
                 socket.close();
             } catch (IOException ignored) {}
